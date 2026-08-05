@@ -21,15 +21,6 @@ export const mosaic = {
 } as const;
 
 /**
- * Cinza do wordmark "01 TECNOLOGIA", amostrado da logo oficial.
- *
- * NÃO é `text.primary` (#212B33, um quase-preto azulado): o wordmark é um
- * cinza neutro e mais claro. Usar o token de texto aqui escurece a marca e
- * tira o contraste com o mosaico.
- */
-export const WORDMARK_GRAY = "#4A4A4A";
-
-/**
  * Mapa único de status → cor do tema.
  * Reaproveitado em Chips de férias e de formulários — nunca cor "livre".
  */

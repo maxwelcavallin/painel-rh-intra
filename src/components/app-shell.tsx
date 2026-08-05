@@ -61,7 +61,7 @@ export function AppShell({
           display: { xs: "flex", md: "none" },
         }}
       >
-        <Logo size={30} />
+        <Logo size={24} />
       </Toolbar>
       <Divider sx={{ display: { xs: "block", md: "none" } }} />
 
@@ -158,7 +158,7 @@ export function AppShell({
 
           {/* Versão em negativo do lockup — a AppBar tem fundo escuro. */}
           <Box sx={{ display: { xs: "none", md: "block" } }}>
-            <Logo tone="dark" size={30} />
+            <Logo tone="dark" size={24} />
           </Box>
 
           <Box sx={{ flex: 1 }} />

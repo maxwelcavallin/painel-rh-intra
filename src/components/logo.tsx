@@ -1,107 +1,63 @@
+import Image from "next/image";
 import Box from "@mui/material/Box";
-import Typography from "@mui/material/Typography";
-
-import { mosaic, WORDMARK_GRAY } from "@/lib/brand";
 
 /**
- * Lockup da 01 Tecnologia: faixa em mosaico com o wordmark embaixo.
+ * Lockup oficial da 01 Tecnologia.
  *
- * Desenhado em código a partir da logo oficial. É uma RECONSTRUÇÃO — a
- * disposição dos tons foi lida da imagem, não extraída do arquivo vetorial.
- * Quando o SVG oficial chegar, jogue em `public/` e troque o mosaico por um
- * `<Image>`: a API deste componente (`tone`, `iconOnly`, `size`) não muda.
+ * Substituiu o mosaico desenhado em código, que era uma reconstrução lida da
+ * arte. Agora são os arquivos reais em `public/`, gerados a partir do
+ * `logo.jpg` original: paleta quantizada para limpar o chuvisco de JPEG dos
+ * quadrados chapados e 3x de escala, que cobre tela retina no tamanho em que a
+ * logo aparece sem virar peso morto (a origem tem 203px — mais escala não
+ * inventa detalhe).
  *
- * `tone="dark"` existe porque a AppBar usa `primary.main` como fundo. Em vez
- * de uma segunda arte, o mosaico vira brancos com opacidades diferentes —
- * preserva o desenho do grid sem perder contraste.
+ * A ARTE TEM FUNDO BRANCO. Não é JPEG com transparência possível: os quadrados
+ * brancos do mosaico encostam na borda de cima, então tornar o branco
+ * transparente abriria buracos no próprio desenho. Por isso `tone="dark"`
+ * apoia a logo numa placa branca em vez de tentar um negativo — é o que se faz
+ * com marca que só existe sobre branco, e fica legível de propósito.
  */
 
+const LOCKUP = { src: "/logo.png", w: 203, h: 92 };
+const MARCA = { src: "/logo-mosaico.png", w: 203, h: 75 };
+
 type LogoProps = {
-  /** `dark` = para fundo escuro (AppBar). `light` = para fundo claro (login, rodapé). */
+  /** `dark` = fundo escuro (AppBar): ganha placa branca. `light` = fundo claro. */
   tone?: "light" | "dark";
   /** Só o mosaico, sem o wordmark. Usado quando a sidebar está recolhida. */
   iconOnly?: boolean;
-  /** Altura da faixa de mosaico em px. O resto do lockup deriva daí. */
+  /** Altura da arte em px. A largura sai da proporção original. */
   size?: number;
 };
 
-/** `"w"` = quadrado branco; `"gray"` = neutro; números = tons do mosaico. */
-type Cell = keyof typeof mosaic | "w";
-
-const COLS = 8;
-const ROWS = 3;
-
-/**
- * O mosaico da marca: azul à esquerda, esmaecendo para neutro à direita.
- * Lido linha a linha da logo oficial.
- */
-const GRID: Cell[] = [
-  300, "w", "w", 500, "w", 700, "w", "gray",
-  500, "gray", 500, "w", 500, "w", "gray", "gray",
-  500, "w", 700, 500, 700, 500, "gray", "gray",
-];
-
-/** Opacidades do negativo, na mesma ordem de intensidade dos tons originais. */
-const DARK_ALPHA: Record<Cell, number> = {
-  w: 0.96,
-  100: 0.82,
-  300: 0.66,
-  500: 0.5,
-  700: 0.34,
-  gray: 0.22,
-};
-
 export function Logo({ tone = "light", iconOnly = false, size = 32 }: LogoProps) {
-  const cell = size / ROWS;
-  const dark = tone === "dark";
-
-  const colorFor = (key: Cell) =>
-    dark
-      ? `rgba(255,255,255,${DARK_ALPHA[key]})`
-      : key === "w"
-        ? "#FFFFFF"
-        : mosaic[key];
+  const arte = iconOnly ? MARCA : LOCKUP;
+  const altura = iconOnly ? size : size * 1.35;
+  const largura = Math.round((arte.w / arte.h) * altura);
 
   return (
     <Box
-      sx={{
-        display: "inline-flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        gap: `${Math.max(2, cell * 0.22)}px`,
-        flexShrink: 0,
-      }}
+      sx={
+        tone === "dark"
+          ? {
+              display: "inline-flex",
+              bgcolor: "common.white",
+              borderRadius: 1,
+              px: 0.75,
+              py: 0.5,
+              lineHeight: 0,
+            }
+          : { display: "inline-flex", lineHeight: 0 }
+      }
     >
-      <Box
-        aria-hidden
-        sx={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${COLS}, ${cell}px)`,
-          gridTemplateRows: `repeat(${ROWS}, ${cell}px)`,
-          gap: `${Math.max(1, cell * 0.06)}px`,
-        }}
-      >
-        {GRID.map((key, i) => (
-          <Box key={i} sx={{ backgroundColor: colorFor(key) }} />
-        ))}
-      </Box>
-
-      {!iconOnly && (
-        <Typography
-          component="span"
-          sx={{
-            // Acompanha a largura do mosaico em vez de sobrar ou faltar.
-            fontSize: cell * 1.22,
-            fontWeight: 700,
-            letterSpacing: "0.01em",
-            lineHeight: 1,
-            whiteSpace: "nowrap",
-            color: dark ? "common.white" : WORDMARK_GRAY,
-          }}
-        >
-          01 TECNOLOGIA
-        </Typography>
-      )}
+      <Image
+        src={arte.src}
+        alt="01 Tecnologia"
+        width={largura}
+        height={Math.round(altura)}
+        priority
+        style={{ display: "block", height: "auto" }}
+      />
     </Box>
   );
 }
