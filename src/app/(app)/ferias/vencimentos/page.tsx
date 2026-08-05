@@ -17,6 +17,8 @@ import { requireManagerOrRH } from "@/lib/dal";
 import { formatBR } from "@/lib/clt";
 import { listVacationStatus } from "@/server/vacation-deadlines";
 
+import { ParecerButton } from "./parecer-button";
+
 export const metadata: Metadata = { title: "Vencimento de férias" };
 
 const SEVERITY = {
@@ -83,6 +85,7 @@ export default async function VencimentosPage() {
                 <TableCell align="right">Prazo</TableCell>
                 <TableCell align="right">Saldo</TableCell>
                 <TableCell>Situação</TableCell>
+                <TableCell align="right">Análise</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -148,6 +151,9 @@ export default async function VencimentosPage() {
                         )}
                       </Stack>
                     </TableCell>
+                    <TableCell align="right">
+                      <ParecerButton userId={s.userId} nome={s.name} />
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -160,6 +166,9 @@ export default async function VencimentosPage() {
         <Typography variant="caption" sx={{ color: "text.secondary" }}>
           Quem está vencido ou crítico recebe aviso automático na passada diária
           — colaborador e gestor. Quem já marcou férias sai da urgência.
+          O <strong>parecer</strong> cruza histórico, saldo, prazo e agenda da
+          equipe para sugerir o que combinar e até quando; os números vêm do
+          cálculo do sistema, não do modelo.
         </Typography>
       </Box>
     </Stack>
