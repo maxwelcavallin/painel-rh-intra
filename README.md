@@ -79,6 +79,7 @@ por causa de um webhook indisponível.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
 | `npm run test:clt` | Regras da CLT — 35 verificações, sem banco e sem rede |
+| `npm run test:clt2` | Abono, dias úteis, prazo de pagamento e período concessivo — 24 verificações, puro |
 | `npm run test:cadastro` | RMC, validação de CPF e mascaramento — 34 verificações, puro |
 | `npm run test:ferias` | Núcleo de férias — 13 verificações contra o banco real |
 | `npm run test:colaborador` | Cadastro de colaborador — 20 verificações contra o banco real |
@@ -167,6 +168,40 @@ são config estática em `src/server/holidays.ts`.
   cidade+UF, com a mesma função pura usada na tela (`lib/rmc.ts`), para o que se
   vê e o que se grava não divergirem. A UF entra na conta: existe Lapa em SP e
   Rio Negro em SC, e nenhuma das duas é da RMC.
+
+## Central de comunicações
+
+Em **/comunicacoes** (só RH) há uma matriz **tipo de aviso × canal**. Oito tipos
+individuais — recuperação de senha, solicitação e decisão de férias, vencimento,
+recibo, pagamento, formulário novo e cobrança — cada um ligável em WhatsApp,
+Discord ou e-mail, com botão de teste que dispara para o próprio RH.
+
+Duas regras que valem entender:
+
+- **A notificação dentro da intranet fica fora da matriz.** Ela é o próprio
+  sistema, não um canal externo que possa cair — sempre é criada.
+- **O código de recuperação de senha não vira notificação in-app.** Quem precisa
+  dele não consegue entrar, e o código não pode ficar registrado no sistema.
+
+Nesta entrega o **WhatsApp faz o papel do e-mail**, por decisão de produto. O
+canal de e-mail já aparece mapeado mas marcado como indisponível; quando for
+implementado, é ligar por tipo sem tocar em código.
+
+## Onde a multa acontece
+
+O fluxo não termina na aprovação. **/ferias/controle** rastreia os três passos
+seguintes, que é onde o dinheiro se perde:
+
+- **Recibo assinado** — sem ele a empresa fica exposta.
+- **Pagamento até 2 dias ÚTEIS antes do início** (art. 145). O cálculo pula fim
+  de semana e feriado: contar em dias corridos daria uma data em que o dinheiro
+  não entra na conta.
+- **Repasse à Senior** — CSV em `/api/relatorios/ferias`, com o lote pendente
+  separado, para os envios dos dias 10 e 20.
+
+E **/ferias/vencimentos** mostra o prazo que realmente importa: o **período
+concessivo** (arts. 134 e 137). Passar dele obriga a pagar em dobro. Quem entra
+em situação crítica recebe aviso automático na passada diária.
 
 ## Roadmap pós-entrega
 
