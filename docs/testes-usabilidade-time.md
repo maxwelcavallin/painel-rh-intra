@@ -121,9 +121,14 @@ aprovar, confira se apareceu prazo de pagamento.
 "quem eu preciso mandar tirar férias antes que vire prejuízo?". Responde
 mesmo? A ordem das linhas faz sentido?
 
-**B4. Painel de formulários.** Veja o placar de respostas da sua equipe.
+**B4. Parecer de risco.** Ainda em Vencimento de férias, clique em **Gerar
+parecer**. Ele deve trazer só a *sua* equipe, nunca a empresa inteira. O que
+interessa: as ações sugeridas são concretas o bastante para você sair e fazer,
+ou são conselho genérico? As datas batem com as da tabela?
 
-**B5. Barreiras.** Tente abrir `/comunicacoes`, `/ferias/controle` e
+**B5. Painel de formulários.** Veja o placar de respostas da sua equipe.
+
+**B6. Barreiras.** Tente abrir `/comunicacoes`, `/ferias/controle` e
 `/colaboradores`. Devem barrar — gestor não é RH.
 
 ### C. RH (admin master)
@@ -137,21 +142,26 @@ metropolitana de Curitiba.
 **C2. Dados sensíveis.** Fora da tela de edição, CPF e RG devem aparecer
 mascarados. Confira em listagens, no calendário e no CSV.
 
-**C3. Controle de férias.** Abra Controle de férias. Registre um recibo, um
+**C3. Parecer de risco.** Em Vencimento de férias, clique em **Gerar parecer**.
+Como RH você vê a empresa inteira. Confira se os números batem com a tabela e se
+a ordem das ações faz sentido para o seu mês. Clique em **Gerar de novo** e veja
+se o segundo parecer contradiz o primeiro — se contradisser, avise.
+
+**C4. Controle de férias.** Abra Controle de férias. Registre um recibo, um
 pagamento e marque um lote como repassado à Senior. Baixe os dois CSVs e abra
 no Excel — acentuação e colunas saíram certas?
 
-**C4. Comunicações.** Abra Comunicações. Desligue o WhatsApp de um tipo, use o
+**C5. Comunicações.** Abra Comunicações. Desligue o WhatsApp de um tipo, use o
 botão "testar" e confira que nada saiu. Ligue de novo. A tela deixa claro que a
 notificação **dentro** da intranet nunca é desligada?
 
-**C5. Avisos.** Publique um aviso para um setor específico e confira que só
+**C6. Avisos.** Publique um aviso para um setor específico e confira que só
 quem devia recebeu.
 
-**C6. Formulários.** Crie um formulário, escolha a audiência e acompanhe o
+**C7. Formulários.** Crie um formulário, escolha a audiência e acompanhe o
 placar.
 
-**C7. Aprovação em duas mãos.** Aprove como RH uma solicitação que o gestor
+**C8. Aprovação em duas mãos.** Aprove como RH uma solicitação que o gestor
 ainda não aprovou. Ela **não** pode ficar aprovada só com a sua assinatura.
 
 ---
@@ -168,6 +178,9 @@ Estas são decisões de produto, não falhas:
   mensagem de verdade. O RH preenche pela tela de Colaboradores quando for
   testar.
 - **Recibo de férias não tem webhook.** Foi deixado de fora nesta rodada.
+- **O parecer demora alguns segundos.** É uma chamada de IA de verdade. Se
+  aparecer o aviso de que a IA está indisponível, o parecer sai montado direto
+  dos números — é comportamento previsto, não falha.
 - **Acesso da Senior (contabilidade) não existe.** O que entrega valor agora é
   o CSV que o RH baixa em Controle de férias.
 - **Uma passada de lembretes por dia.** Limite do plano gratuito da Vercel. As

@@ -2,7 +2,7 @@
 
 **Acesso:** https://painel-rh-intra.vercel.app
 
-Este roteiro leva cerca de **15 minutos** e mostra o produto na ordem em que o
+Este roteiro leva cerca de **18 minutos** e mostra o produto na ordem em que o
 problema aparece no dia a dia do RH. Cada passo diz o que clicar e o que
 observar. Se preferir explorar por conta própria, os acessos estão no fim.
 
@@ -83,7 +83,49 @@ já quitou tudo sai da lista.
 > Para recompor o cenário, ajuste as contagens de `historico()` em
 > `src/db/seed.ts` e rode `npm run db:seed && npm run db:equipe`.
 
-### 3. As regras da CLT aplicadas na entrada (4 min)
+### 3. O parecer: da lista para o plano de ação (3 min)
+
+A tela acima mostra **o que está errado**. Ela não responde a pergunta seguinte,
+que é a que o RH faz de verdade: *por onde eu começo?*
+
+Ainda na tela de Vencimento de férias, clique em **Gerar parecer**, no canto
+superior direito.
+
+**O que observar:** o sistema cruza todos os prazos, o passivo somado em dias
+sujeitos a pagamento em dobro, a concentração de férias mês a mês e as
+pendências de recibo e pagamento — e devolve uma **lista priorizada, com nome e
+data em cada item**. Não é um resumo da tabela: é a ordem de ataque.
+
+No cenário desta demonstração o parecer identifica que a empresa tem **60 dias
+já em risco de pagamento em dobro**, concentrados em duas pessoas, e recomenda,
+nesta ordem:
+
+1. Fechar as datas da Larissa — 30 dias vencidos desde 12/05/2026
+2. Definir as do Bruno antes de 14/08/2026, prazo que vence em poucos dias
+3. Liberar o pagamento da Camila até 20/08/2026, antes do limite do art. 145
+
+Ele também percebe o que a tabela não mostra: que um **segundo período
+aquisitivo** da Larissa já fechou, e que o passivo vira 60 dias na mesma pessoa
+se o primeiro não for resolvido agora.
+
+**O escopo acompanha quem pediu.** O RH recebe o parecer da empresa; um gestor
+recebe o da própria equipe, com o mesmo recorte da tela. Entre como gestor e
+gere de novo para comparar.
+
+**E quando não há problema, o parecer diz isso e para de falar.** A equipe do
+gestor está em dia, e o retorno é uma frase: nenhuma ação necessária. Parecer
+que alarma sem motivo deixa de ser levado a sério — foi um defeito real que
+apareceu no desenvolvimento e teve de ser corrigido no prompt.
+
+> **Aqui também a IA não decide.** Prazos, saldos, o passivo somado e a última
+> data possível para solicitar são calculados em código, pelas mesmas funções
+> que alimentam a tela — os dois números nunca divergem. A classificação de
+> risco fica ancorada no cálculo: prazo vencido é risco alto por definição, e o
+> modelo não tem como rebaixar. Se a IA estiver fora do ar, o parecer sai
+> montado direto dos números, com os mesmos riscos e as mesmas ações. Tela de
+> RH não pode ficar em branco porque um serviço externo caiu.
+
+### 4. As regras da CLT aplicadas na entrada (4 min)
 
 Saia e entre como colaborador:
 
@@ -107,15 +149,18 @@ explica em português o que precisa mudar. E há uma distinção deliberada: o q
 **lei** proíbe é bloqueio; o que a **política interna** pede a mais é aviso — o
 RH continua podendo decidir.
 
-**Sobre a análise automática:** o sistema usa IA para redigir o parecer, mas
-**a IA não decide**. Os impedimentos legais são calculados em código, antes e
-depois do modelo responder. Se o parecer discordar do cálculo, o cálculo vence.
-Isso também protege contra alguém escrever "ignore as regras acima" no campo de
-observações — foi testado exatamente assim.
+**Sobre a análise automática:** o sistema usa IA para redigir a justificativa
+da recusa, mas **a IA não decide**. Os impedimentos legais são calculados em
+código, antes e depois do modelo responder. Se o texto discordar do cálculo, o
+cálculo vence. Isso também protege contra alguém escrever "ignore as regras
+acima" no campo de observações — foi testado exatamente assim.
+
+É a mesma arquitetura do parecer do passo 3, aplicada a uma decisão em vez de a
+um plano: **o cálculo manda, a IA escreve.**
 
 Agora faça uma solicitação **válida** e envie.
 
-### 4. Dupla aprovação e o relógio do pagamento (3 min)
+### 5. Dupla aprovação e o relógio do pagamento (3 min)
 
 Entre como gestor:
 
@@ -135,7 +180,7 @@ férias começam numa segunda, o prazo recua para a quinta anterior, porque fim 
 semana não conta. Feriado empurra mais um dia. É a data que gera multa, e ela
 passa a existir sozinha no momento da aprovação.
 
-### 5. O que a Thamires faz todo mês (3 min)
+### 6. O que a Thamires faz todo mês (3 min)
 
 Ainda como RH, vá em **Controle de férias**.
 
@@ -151,7 +196,7 @@ e é o que vai para a contabilidade nos dias 10 e 20.
 > resolve a necessidade agora, sem dar controle operacional a quem só precisa
 > consultar.
 
-### 6. Comunicação sob controle do RH (2 min)
+### 7. Comunicação sob controle do RH (2 min)
 
 Vá em **Comunicações**.
 
@@ -173,6 +218,7 @@ enviou.
 | Pedido da reunião | Estado |
 | --- | --- |
 | Controle de vencimento de férias | Entregue — tela, alertas e passada diária |
+| Saber por onde começar, não só o que está errado | Entregue — parecer de risco com plano priorizado |
 | Abono pecuniário e antecipação do 13º | Entregue, com o teto do art. 143 aplicado |
 | Prazo de pagamento e recibo | Entregue, com data calculada em dias úteis |
 | Repasse à contabilidade | Entregue como relatório CSV |
@@ -240,6 +286,11 @@ hospedagem na Vercel.
 
 **Segurança:** negação por padrão em duas camadas, autorização verificada junto
 do dado, regras legais aplicadas em código independentemente da IA.
+
+**Uso de IA:** dois pontos, e nenhum deles decide. Na solicitação, escreve a
+justificativa da recusa a partir de impedimentos calculados em código. No
+parecer, lê o quadro apurado e propõe a ordem de ataque. Os dois têm caminho
+determinístico de reserva e continuam funcionando com a IA fora do ar.
 
 **Testes:** 321 verificações automatizadas em 11 suítes, cobrindo as regras da
 CLT, o cálculo de vencimento, o fluxo operacional de ponta a ponta, o cadastro,

@@ -374,7 +374,8 @@ footer {
     <p><strong>Não reporte como bug:</strong> e-mail não envia (WhatsApp faz o
     papel dele nesta entrega); DM do Discord não envia (depende de bot, ficou no
     roadmap); WhatsApp só sai com telefone cadastrado e os de vocês estão em
-    branco de propósito; recibo de férias ficou sem webhook nesta rodada; acesso
+    branco de propósito; recibo de férias ficou sem webhook nesta rodada; o parecer
+    demora alguns segundos por ser chamada de IA de verdade; acesso
     da Senior não existe — o que entrega valor agora é o CSV; lembretes rodam
     uma vez por dia (limite do plano gratuito), com disparo manual nas telas.</p>
   </div>
@@ -422,6 +423,7 @@ const ROTEIRO = [
       { t: "Aprovar uma solicitação", n: "Depois de aprovar, apareceu prazo de pagamento?" },
       { t: "Reprovar outra, com justificativa", n: "A pessoa fica sabendo o motivo?" },
       { t: "Abrir Vencimento de férias", n: "A tela responde 'quem preciso mandar tirar férias antes que vire prejuízo?'. A ordem das linhas faz sentido?" },
+      { t: "Gerar parecer em Vencimento de férias", n: "Deve trazer só a SUA equipe. As ações são concretas o bastante para sair e fazer, ou são conselho genérico?" },
       { t: "Abrir o Painel de formulários e ver o placar da equipe" },
       { t: "Tentar abrir /comunicacoes, /ferias/controle e /colaboradores", n: "Devem barrar — gestor não é RH.", flag: "block" }
     ]
@@ -435,6 +437,7 @@ const ROTEIRO = [
       { t: "Tentar salvar com um CPF inválido" },
       { t: "Conferir a marcação de região metropolitana de Curitiba" },
       { t: "Conferir que CPF e RG aparecem mascarados fora da tela de edição", n: "Olhe listagens, calendário e o CSV.", flag: "block" },
+      { t: "Gerar parecer como RH", n: "Vem a empresa inteira. Os números batem com a tabela? Clique em \"Gerar de novo\" — se o segundo parecer contradisser o primeiro, avise." },
       { t: "Registrar um recibo assinado em Controle de férias" },
       { t: "Registrar um pagamento" },
       { t: "Marcar um lote como repassado à Senior" },
