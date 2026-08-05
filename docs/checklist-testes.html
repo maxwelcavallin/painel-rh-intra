@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checklist de testes · Intranet RH 01 Tec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/*
+  Design System 01 Tec — os mesmos tokens de src/app/theme.ts.
+  Regra do DS: nunca hex solto, sempre a variável.
+*/
+:root {
+  --primary:        #2C5F8A;
+  --primary-dark:   #1B3D59;
+  --primary-light:  #5B85AC;
+  --secondary:      #6C849C;
+  --success:        #2E7D32;
+  --success-bg:     #E8F5E9;
+  --warning:        #ED6C02;
+  --warning-bg:     #FFF3E0;
+  --error:          #D32F2F;
+  --error-bg:       #FFEBEE;
+  --info:           #0288D1;
+  --info-bg:        #E3F2FD;
+  --bg:             #F4F6F8;
+  --paper:          #FFFFFF;
+  --text:           #212B33;
+  --text-2:         #63707B;
+  --divider:        #E4E8EC;
+  --mosaic-100:     #DDE4EA;
+  --mosaic-500:     #6C849C;
+  --radius:         8px;
+  --shadow:         0 1px 3px rgba(44,95,138,0.10);
+  --shadow-2:       0 3px 10px rgba(44,95,138,0.16);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Roboto, Inter, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- AppBar ---------- */
+.appbar {
+  background: var(--primary);
+  color: #fff;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: var(--shadow-2);
+}
+.logo {
+  display: grid;
+  grid-template-columns: repeat(3, 9px);
+  grid-template-rows: repeat(3, 9px);
+  gap: 2px;
+  flex: none;
+}
+.logo i { background: var(--mosaic-100); border-radius: 1px; }
+.logo i:nth-child(2), .logo i:nth-child(4), .logo i:nth-child(9) { background: var(--primary-light); }
+.logo i:nth-child(5) { background: #fff; }
+.appbar h1 { font-size: 16px; font-weight: 500; margin: 0; letter-spacing: .01em; }
+.appbar .sub { font-size: 12px; opacity: .78; margin-left: auto; text-align: right; }
+
+/* ---------- Layout ---------- */
+.wrap { max-width: 940px; margin: 0 auto; padding: 24px 20px 72px; }
+
+/* ---------- Progresso ---------- */
+.progress-card {
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  margin-bottom: 22px;
+  position: sticky;
+  top: 62px;
+  z-index: 9;
+}
+.progress-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.progress-top strong { font-size: 15px; font-weight: 500; }
+.progress-top span { font-size: 13px; color: var(--text-2); }
+.bar { height: 6px; background: var(--mosaic-100); border-radius: 3px; overflow: hidden; }
+.bar > div {
+  height: 100%;
+  width: 0;
+  background: var(--primary);
+  border-radius: 3px;
+  transition: width .25s ease;
+}
+.progress-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+
+/* ---------- Botões ---------- */
+button {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .02857em;
+  border-radius: 4px;
+  min-height: 36px;
+  padding: 0 16px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background .15s, border-color .15s;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-outline { background: transparent; color: var(--primary); border-color: rgba(44,95,138,.5); }
+.btn-outline:hover { background: rgba(44,95,138,.06); border-color: var(--primary); }
+.btn-text { background: transparent; color: var(--text-2); }
+.btn-text:hover { background: rgba(0,0,0,.04); }
+
+/* ---------- Acessos ---------- */
+.accounts {
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  margin-bottom: 22px;
+}
+.accounts h2 { font-size: 15px; font-weight: 500; margin: 0 0 4px; }
+.accounts p { margin: 0 0 14px; color: var(--text-2); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--divider);
+  padding: 8px 10px 8px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--divider); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.table-scroll { overflow-x: auto; }
+
+/* ---------- Chips ---------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chip-user    { background: var(--info-bg);    color: var(--info); }
+.chip-gestor  { background: var(--warning-bg); color: var(--warning); }
+.chip-rh      { background: var(--success-bg); color: var(--success); }
+.chip-critico { background: var(--error-bg);   color: var(--error); }
+
+/* ---------- Seções ---------- */
+.section {
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.section > header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--divider);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.section > header h2 { font-size: 15px; font-weight: 500; margin: 0; flex: 1 1 auto; }
+.section > header .count { font-size: 12.5px; color: var(--text-2); }
+.section > header .rule {
+  font-size: 12.5px;
+  color: var(--text-2);
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* ---------- Itens ---------- */
+.item { border-bottom: 1px solid var(--divider); }
+.item:last-child { border-bottom: 0; }
+.item-head {
+  display: flex;
+  gap: 12px;
+  padding: 13px 20px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.item-head:hover { background: rgba(44,95,138,.03); }
+.item input[type=checkbox] {
+  appearance: none;
+  flex: none;
+  width: 19px; height: 19px;
+  margin: 1px 0 0;
+  border: 2px solid var(--secondary);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  transition: background .15s, border-color .15s;
+}
+.item input[type=checkbox]:checked { background: var(--primary); border-color: var(--primary); }
+.item input[type=checkbox]:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px; top: 1px;
+  width: 4px; height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.item-body { flex: 1 1 auto; min-width: 0; }
+.item-title { font-size: 14px; }
+.item-note { font-size: 12.5px; color: var(--text-2); margin-top: 3px; }
+.item.done .item-title { color: var(--text-2); text-decoration: line-through; }
+
+.flag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 3px;
+  margin-right: 7px;
+  vertical-align: 1px;
+}
+.flag-block { background: var(--error-bg); color: var(--error); }
+.flag-expect { background: var(--warning-bg); color: var(--warning); }
+
+/* ---------- Achado ---------- */
+.finding { padding: 0 20px 14px 51px; }
+.finding textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  padding: 9px 11px;
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  resize: vertical;
+  min-height: 62px;
+  background: var(--bg);
+  transition: border-color .15s, background .15s;
+}
+.finding textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--paper);
+}
+.finding label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 5px;
+}
+.item.has-finding .item-head { box-shadow: inset 3px 0 0 var(--warning); }
+
+/* ---------- Aviso ---------- */
+.callout {
+  border-left: 3px solid var(--info);
+  background: var(--info-bg);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 14px 18px;
+  margin-bottom: 22px;
+  font-size: 13px;
+}
+.callout.warn { border-left-color: var(--warning); background: var(--warning-bg); }
+.callout strong { font-weight: 500; }
+.callout p { margin: 0 0 7px; }
+.callout p:last-child { margin-bottom: 0; }
+
+footer {
+  text-align: center;
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 26px 20px 0;
+}
+
+@media (max-width: 560px) {
+  .appbar .sub { display: none; }
+  .finding { padding-left: 20px; }
+}
+@media print {
+  .progress-card, .progress-actions, .appbar { position: static; }
+  button { display: none; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="logo" aria-hidden="true">
+    <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+  </div>
+  <h1>Checklist de testes de usabilidade</h1>
+  <div class="sub">Intranet RH · 01 Tec</div>
+</header>
+
+<div class="wrap">
+
+  <div class="progress-card">
+    <div class="progress-top">
+      <strong id="pct">0% concluído</strong>
+      <span id="tally">0 de 0 itens · 0 achado(s)</span>
+    </div>
+    <div class="bar"><div id="fill"></div></div>
+    <div class="progress-actions">
+      <button class="btn-primary" onclick="exportar()">Exportar achados</button>
+      <button class="btn-outline" onclick="window.print()">Imprimir</button>
+      <button class="btn-text" onclick="limpar()">Limpar tudo</button>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><strong>O que estamos testando é usabilidade, não código.</strong> Se você
+    travar em algum ponto, esse é o achado — anote onde travou e o que esperava
+    que acontecesse.</p>
+    <p>Seu progresso fica salvo neste navegador. Ao terminar, clique em
+    <strong>Exportar achados</strong> e mande o arquivo.</p>
+  </div>
+
+  <div class="accounts">
+    <h2>Seu acesso</h2>
+    <p>Teste com o seu próprio login — metade das regras depende de quem você é.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Nome</th><th>E-mail</th><th>Senha</th><th>Papel</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Thayla Zappielo Oliveira</td><td>thayla.oliveira@01tec.com.br</td><td><code>Thayla01Tec@26</code></td><td><span class="chip chip-user">Colaborador</span></td></tr>
+          <tr><td>Rafaela Nascimento</td><td>rafaela.nascimento@01tec.com.br</td><td><code>Rafaela01Tec@26</code></td><td><span class="chip chip-user">Colaborador</span></td></tr>
+          <tr><td>Kamilly Vitoria Melo Mateus</td><td>kamilly.mateus@01tec.com.br</td><td><code>Kamilly01Tec@26</code></td><td><span class="chip chip-user">Colaborador</span></td></tr>
+          <tr><td>Kauan Henrique de Jesus Kutzki</td><td>kauan.jesus@01tec.com.br</td><td><code>Kauan01Tec@26</code></td><td><span class="chip chip-user">Colaborador</span></td></tr>
+          <tr><td>Maxwel Cavallin</td><td>maxwel.cavallin@01tec.com.br</td><td><code>Gestor01Tec@26</code></td><td><span class="chip chip-gestor">Gestor</span></td></tr>
+          <tr><td>RH (admin master)</td><td>rh@01tec.com.br</td><td><code>RH01Tec@2026</code></td><td><span class="chip chip-rh">RH</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="lista"></div>
+
+  <div class="callout warn">
+    <p><strong>Não reporte como bug:</strong> e-mail não envia (WhatsApp faz o
+    papel dele nesta entrega); DM do Discord não envia (depende de bot, ficou no
+    roadmap); WhatsApp só sai com telefone cadastrado e os de vocês estão em
+    branco de propósito; recibo de férias ficou sem webhook nesta rodada; acesso
+    da Senior não existe — o que entrega valor agora é o CSV; lembretes rodam
+    uma vez por dia (limite do plano gratuito), com disparo manual nas telas.</p>
+  </div>
+
+  <footer>
+    Intranet RH · 01 Tec — <a href="https://painel-rh-intra.vercel.app" style="color:var(--primary)">painel-rh-intra.vercel.app</a>
+  </footer>
+</div>
+
+<script>
+/*
+  Cada item vira uma linha com caixa de marcar e campo de achado.
+  `flag` destaca o que não pode passar batido:
+    block  — se acontecer, avise na hora
+    expect — o comportamento "errado" aqui é o esperado
+*/
+const ROTEIRO = [
+  {
+    id: "A",
+    titulo: "Colaborador",
+    regra: "Thayla, Rafaela, Kamilly e Kauan. Gestor e RH também fazem, antes do próprio roteiro.",
+    itens: [
+      { t: "Entrar com o próprio e-mail e senha", n: "A tela inicial deixa claro o que fazer aqui, sem ninguém explicando?" },
+      { t: "Recuperar a senha até o fim", n: "O código vai por WhatsApp e seu telefone está em branco — a mensagem não vai chegar.", flag: "expect" },
+      { t: "Pedir férias num período válido", n: "O que o sistema respondeu? A análise automática ajudou ou atrapalhou?" },
+      { t: "Tentar começar as férias numa sexta-feira", n: "A CLT proíbe começar nos 2 dias antes do descanso semanal. A recusa explica isso?" },
+      { t: "Tentar pedir com menos de 40 dias de antecedência", n: "A política da empresa é 40 dias; a lei exige 30. A tela diferencia as duas coisas?" },
+      { t: "Tentar pedir mais de 30 dias" },
+      { t: "Tentar vender 11 dias de abono", n: "O teto legal é 10 — um terço dos 30 dias." },
+      { t: "Tentar fracionar em um pedaço de menos de 5 dias" },
+      { t: "Ver o estado da solicitação em Minhas férias", n: "Dá para saber em quem ela está parada?" },
+      { t: "Cancelar a própria solicitação", n: "O caminho é óbvio?" },
+      { t: "Abrir o Calendário e ver quem mais está de férias" },
+      { t: "Responder um formulário e tentar enviar com obrigatória em branco" },
+      { t: "Tentar abrir /aprovacoes digitando na barra do navegador", n: "Deve barrar. Se abrir, avise imediatamente.", flag: "block" },
+      { t: "Tentar abrir /ferias/controle, /colaboradores e /comunicacoes", n: "Todos devem barrar.", flag: "block" }
+    ]
+  },
+  {
+    id: "B",
+    titulo: "Gestor",
+    regra: "Maxwel. Faça o roteiro do colaborador primeiro — gestor também tira férias.",
+    itens: [
+      { t: "Abrir Aprovações", n: "Você vê só quem reporta a você? A análise automática aparece junto e ajuda a decidir?" },
+      { t: "Aprovar uma solicitação", n: "Depois de aprovar, apareceu prazo de pagamento?" },
+      { t: "Reprovar outra, com justificativa", n: "A pessoa fica sabendo o motivo?" },
+      { t: "Abrir Vencimento de férias", n: "A tela responde 'quem preciso mandar tirar férias antes que vire prejuízo?'. A ordem das linhas faz sentido?" },
+      { t: "Abrir o Painel de formulários e ver o placar da equipe" },
+      { t: "Tentar abrir /comunicacoes, /ferias/controle e /colaboradores", n: "Devem barrar — gestor não é RH.", flag: "block" }
+    ]
+  },
+  {
+    id: "C",
+    titulo: "RH — admin master",
+    regra: "Faça os roteiros de colaborador e gestor primeiro.",
+    itens: [
+      { t: "Cadastrar uma pessoa nova em Colaboradores", n: "O CEP preenche o endereço sozinho?" },
+      { t: "Tentar salvar com um CPF inválido" },
+      { t: "Conferir a marcação de região metropolitana de Curitiba" },
+      { t: "Conferir que CPF e RG aparecem mascarados fora da tela de edição", n: "Olhe listagens, calendário e o CSV.", flag: "block" },
+      { t: "Registrar um recibo assinado em Controle de férias" },
+      { t: "Registrar um pagamento" },
+      { t: "Marcar um lote como repassado à Senior" },
+      { t: "Baixar os dois CSVs e abrir no Excel", n: "Acentuação e colunas saíram certas?" },
+      { t: "Desligar o WhatsApp de um tipo em Comunicações e usar o botão testar", n: "Nada deve sair por WhatsApp — mas a notificação dentro da intranet continua aparecendo." },
+      { t: "Ligar o canal de volta" },
+      { t: "Publicar um aviso para um setor específico", n: "Só quem devia recebeu?" },
+      { t: "Criar um formulário, escolher a audiência e acompanhar o placar" },
+      { t: "Aprovar como RH algo que o gestor ainda não aprovou", n: "NÃO pode ficar aprovada só com a assinatura do RH.", flag: "block" }
+    ]
+  },
+  {
+    id: "D",
+    titulo: "Impressão geral",
+    regra: "Responda depois de terminar o seu roteiro. Vale opinião — diga o que especificamente atrapalhou.",
+    itens: [
+      { t: "Em que momento você mais travou?" },
+      { t: "Qual tela ficou mais confusa, e por quê?" },
+      { t: "Alguma mensagem de erro não explicou o que fazer?" },
+      { t: "O que você procurou e não achou?" },
+      { t: "Você usaria isto no dia a dia? O que falta?" }
+    ]
+  }
+];
+
+const CHAVE = "checklist-rh-01tec";
+let estado = {};
+
+try { estado = JSON.parse(localStorage.getItem(CHAVE)) || {}; } catch { estado = {}; }
+
+function render() {
+  const lista = document.getElementById("lista");
+  lista.innerHTML = "";
+
+  ROTEIRO.forEach((sec) => {
+    const total = sec.itens.length;
+    const feitos = sec.itens.filter((_, i) => estado[`${sec.id}${i}`]?.ok).length;
+
+    const el = document.createElement("section");
+    el.className = "section";
+    el.innerHTML = `
+      <header>
+        <h2>${sec.id}. ${sec.titulo}</h2>
+        <span class="count">${feitos} de ${total}</span>
+        <p class="rule">${sec.regra}</p>
+      </header>`;
+
+    sec.itens.forEach((item, i) => {
+      const chave = `${sec.id}${i}`;
+      const dados = estado[chave] || {};
+      const flag = item.flag === "block"
+        ? '<span class="flag flag-block">Não pode passar</span>'
+        : item.flag === "expect"
+        ? '<span class="flag flag-expect">Falha esperada</span>'
+        : "";
+
+      const div = document.createElement("div");
+      div.className = "item" + (dados.ok ? " done" : "") + (dados.nota ? " has-finding" : "");
+      div.innerHTML = `
+        <label class="item-head">
+          <input type="checkbox" ${dados.ok ? "checked" : ""} data-k="${chave}">
+          <span class="item-body">
+            <span class="item-title">${flag}${item.t}</span>
+            ${item.n ? `<span class="item-note">${item.n}</span>` : ""}
+          </span>
+        </label>
+        <div class="finding">
+          <label for="n-${chave}">Achado — onde travou, o que esperava, o que aconteceu</label>
+          <textarea id="n-${chave}" data-n="${chave}" placeholder="Deixe em branco se correu tudo bem.">${dados.nota || ""}</textarea>
+        </div>`;
+      el.appendChild(div);
+    });
+
+    lista.appendChild(el);
+  });
+
+  atualizarProgresso();
+}
+
+function atualizarProgresso() {
+  const total = ROTEIRO.reduce((s, sec) => s + sec.itens.length, 0);
+  const feitos = Object.values(estado).filter((v) => v.ok).length;
+  const achados = Object.values(estado).filter((v) => (v.nota || "").trim()).length;
+  const pct = total ? Math.round((feitos / total) * 100) : 0;
+
+  document.getElementById("pct").textContent = `${pct}% concluído`;
+  document.getElementById("tally").textContent =
+    `${feitos} de ${total} itens · ${achados} achado(s)`;
+  document.getElementById("fill").style.width = `${pct}%`;
+}
+
+function salvar() {
+  localStorage.setItem(CHAVE, JSON.stringify(estado));
+}
+
+document.addEventListener("change", (e) => {
+  const k = e.target.dataset.k;
+  if (!k) return;
+  estado[k] = { ...(estado[k] || {}), ok: e.target.checked };
+  salvar();
+  e.target.closest(".item").classList.toggle("done", e.target.checked);
+  const sec = ROTEIRO.find((s) => k.startsWith(s.id));
+  if (sec) {
+    const feitos = sec.itens.filter((_, i) => estado[`${sec.id}${i}`]?.ok).length;
+    e.target.closest(".section").querySelector(".count").textContent =
+      `${feitos} de ${sec.itens.length}`;
+  }
+  atualizarProgresso();
+});
+
+document.addEventListener("input", (e) => {
+  const k = e.target.dataset.n;
+  if (!k) return;
+  estado[k] = { ...(estado[k] || {}), nota: e.target.value };
+  salvar();
+  e.target.closest(".item").classList.toggle("has-finding", !!e.target.value.trim());
+  atualizarProgresso();
+});
+
+function exportar() {
+  const linhas = ["# Achados dos testes de usabilidade — Intranet RH 01 Tec", ""];
+  linhas.push(`Exportado em ${new Date().toLocaleString("pt-BR")}`, "");
+
+  let algum = false;
+  ROTEIRO.forEach((sec) => {
+    const comNota = sec.itens
+      .map((item, i) => ({ item, dados: estado[`${sec.id}${i}`] || {} }))
+      .filter(({ dados }) => (dados.nota || "").trim());
+    if (!comNota.length) return;
+    algum = true;
+    linhas.push(`## ${sec.id}. ${sec.titulo}`, "");
+    comNota.forEach(({ item, dados }) => {
+      linhas.push(`### ${item.t}`, "", dados.nota.trim(), "");
+    });
+  });
+
+  if (!algum) linhas.push("_Nenhum achado registrado._", "");
+
+  const total = ROTEIRO.reduce((s, sec) => s + sec.itens.length, 0);
+  const feitos = Object.values(estado).filter((v) => v.ok).length;
+  linhas.push("---", "", `Itens percorridos: ${feitos} de ${total}.`);
+
+  const blob = new Blob([linhas.join("\n")], { type: "text/markdown;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "achados-usabilidade.md";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function limpar() {
+  if (!confirm("Apagar todas as marcações e achados deste navegador?")) return;
+  estado = {};
+  salvar();
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
