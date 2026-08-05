@@ -7,7 +7,7 @@ import { formResponses, forms, notifications, users } from "@/db/schema";
 import type { FormQuestion, Role } from "@/db/schema";
 
 import { resolveAudience, type Audience } from "./audience";
-import { normalizePhone, sendWhatsApp } from "./zaia";
+import { normalizePhone, sendZaia } from "./zaia";
 
 /**
  * Formulários com confirmação de resposta.
@@ -360,7 +360,8 @@ export async function sendPendingReminders(): Promise<ReminderReport> {
       const phone = normalizePhone(manager.phone);
       let sent = false;
       if (phone) {
-        const result = await sendWhatsApp({
+        const result = await sendZaia({
+          template: "form_reminder",
           phone,
           name: manager.name.split(" ")[0],
           message,

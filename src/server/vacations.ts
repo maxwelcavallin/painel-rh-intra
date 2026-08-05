@@ -88,6 +88,7 @@ export async function createVacationRequest(params: {
   if (status === "rejected") {
     await notifyWhatsApp({
       userId,
+      template: "vacation_decision",
       message:
         `Sua solicitação de férias (${period}) foi reprovada automaticamente. ` +
         `${verdict.reasoning} Fale com o RH se precisar de ajuda para reagendar.`,
@@ -114,6 +115,7 @@ export async function createVacationRequest(params: {
     if (employee?.managerId) {
       await notifyManagerPrivately({
         managerId: employee.managerId,
+        template: "vacation_request",
         message:
           `${facts.employee.name} solicitou férias de ${period} ` +
           `(${facts.request.days} dias corridos). Recomendação da análise automática: ` +
@@ -200,11 +202,13 @@ export async function decideVacationRequest(params: {
   if (status === "approved") {
     await notifyWhatsApp({
       userId: request.userId,
+      template: "vacation_decision",
       message: `Boa notícia! Suas férias de ${period} foram aprovadas. Bom descanso!`,
     });
   } else if (status === "rejected") {
     await notifyWhatsApp({
       userId: request.userId,
+      template: "vacation_decision",
       message:
         `Sua solicitação de férias (${period}) foi reprovada.` +
         (note ? ` Motivo: ${note}` : "") +

@@ -12,7 +12,7 @@ import {
 
 import { describeAudience, resolveAudience, type Audience } from "./audience";
 import { sendDiscordWebhook } from "./discord";
-import { normalizePhone, sendWhatsApp } from "./zaia";
+import { normalizePhone, sendZaia } from "./zaia";
 
 /**
  * Avisos do RH — criação e fan-out.
@@ -120,7 +120,8 @@ export async function createAndSendBroadcast(params: {
           };
         }
 
-        const sent = await sendWhatsApp({
+        const sent = await sendZaia({
+          template: "broadcast",
           phone,
           name: r.name.split(" ")[0],
           message: `${title}\n\n${body}`,

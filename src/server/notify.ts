@@ -5,7 +5,7 @@ import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { notifications, users } from "@/db/schema";
 
-import { normalizePhone, sendWhatsApp } from "./zaia";
+import { normalizePhone, sendZaia, type ZaiaTemplate } from "./zaia";
 
 /**
  * Canais de notificação do v1: in-app (RH/gestor) e WhatsApp via Zaia
@@ -37,9 +37,13 @@ export async function notifyInApp(params: {
   }
 }
 
-/** Manda WhatsApp para uma pessoa específica, buscando o telefone do cadastro. */
+/**
+ * Manda WhatsApp para uma pessoa, buscando o telefone do cadastro.
+ * `template` escolhe qual webhook da Zaia usar — cada tipo tem o seu.
+ */
 export async function notifyWhatsApp(params: {
   userId: string;
+  template: ZaiaTemplate;
   message: string;
 }): Promise<void> {
   try {
@@ -57,7 +61,8 @@ export async function notifyWhatsApp(params: {
       return;
     }
 
-    const result = await sendWhatsApp({
+    const result = await sendZaia({
+      template: params.template,
       phone,
       name: user.name.split(" ")[0],
       message: params.message,
@@ -84,9 +89,14 @@ export async function notifyWhatsApp(params: {
  */
 export async function notifyManagerPrivately(params: {
   managerId: string;
+  template: ZaiaTemplate;
   message: string;
 }): Promise<void> {
-  await notifyWhatsApp({ userId: params.managerId, message: params.message });
+  await notifyWhatsApp({
+    userId: params.managerId,
+    template: params.template,
+    message: params.message,
+  });
 }
 
 /** Quem precisa saber que existe uma solicitação: o RH inteiro + o gestor direto. */

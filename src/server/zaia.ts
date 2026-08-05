@@ -3,14 +3,35 @@ import "server-only";
 /**
  * Cliente da Zaia (WhatsApp).
  *
- * POST sem autenticação, payload com `telefone`. São dois webhooks distintos
- * porque são dois eventos distintos no agente da Zaia:
- *   - ZAIA_PASSWORD_RESET_WEBHOOK_URL → código de recuperação de senha
- *   - ZAIA_WEBHOOK_URL                → decisão de férias, avisos, lembretes
+ * POST sem autenticação, payload com `telefone`.
  *
- * Sem a env var configurada, vira no-op registrado — o fluxo do app não quebra
- * por causa de um canal externo indisponível.
+ * CADA TEMPLATE TEM SUA PRÓPRIA URL. Na Zaia, um webhook está amarrado a um
+ * evento/template específico do agente — mandar a decisão de férias no webhook
+ * de recuperação de senha entregaria a mensagem errada. Por isso cada tipo de
+ * notificação tem sua env var própria, listada em `WEBHOOK_ENV`.
+ *
+ * Enquanto uma URL específica não estiver configurada, o envio cai em
+ * `ZAIA_WEBHOOK_URL` (genérica) se ela existir; senão vira no-op registrado.
+ * Assim dá para configurar os templates aos poucos sem quebrar nada.
  */
+
+export type ZaiaTemplate =
+  | "password_reset"
+  | "vacation_decision"
+  | "vacation_request"
+  | "broadcast"
+  | "form_reminder";
+
+/** Um webhook por template. Adicionar template novo = adicionar linha aqui. */
+const WEBHOOK_ENV: Record<ZaiaTemplate, string[]> = {
+  // O primeiro nome é o oficial; os seguintes são compatibilidade com as
+  // variáveis que já existiam antes desta separação.
+  password_reset: ["ZAIA_WEBHOOK_PASSWORD_RESET", "ZAIA_PASSWORD_RESET_WEBHOOK_URL"],
+  vacation_decision: ["ZAIA_WEBHOOK_VACATION_DECISION"],
+  vacation_request: ["ZAIA_WEBHOOK_VACATION_REQUEST"],
+  broadcast: ["ZAIA_WEBHOOK_BROADCAST"],
+  form_reminder: ["ZAIA_WEBHOOK_FORM_REMINDER"],
+};
 
 export type ZaiaResult =
   | { ok: true }
@@ -26,21 +47,51 @@ export function normalizePhone(raw: string | null | undefined): string | null {
   return `55${digits}`;
 }
 
-async function postZaia(
-  url: string | undefined,
-  payload: Record<string, unknown>,
-  label: string,
-): Promise<ZaiaResult> {
+function webhookFor(template: ZaiaTemplate): string | null {
+  for (const name of WEBHOOK_ENV[template]) {
+    const url = process.env[name];
+    if (url) return url;
+  }
+  // Última tentativa: a genérica, para quem ainda não separou os templates.
+  return process.env.ZAIA_WEBHOOK_URL || null;
+}
+
+/**
+ * Envia uma mensagem pelo webhook do template indicado.
+ *
+ * `extra` carrega os campos que aquele template específico espera além de
+ * `telefone`/`nome`/`mensagem` — por exemplo `codigo` na recuperação de senha.
+ */
+export async function sendZaia(params: {
+  template: ZaiaTemplate;
+  phone: string;
+  name: string;
+  message: string;
+  extra?: Record<string, string>;
+}): Promise<ZaiaResult> {
+  const url = webhookFor(params.template);
+
   if (!url) {
-    console.warn(`[zaia] ${label}: webhook não configurado, envio ignorado.`);
-    return { ok: false, skipped: true, reason: "webhook não configurado" };
+    console.warn(
+      `[zaia] template "${params.template}" sem webhook configurado; envio ignorado.`,
+    );
+    return {
+      ok: false,
+      skipped: true,
+      reason: `webhook do template "${params.template}" não configurado`,
+    };
   }
 
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        telefone: params.phone,
+        nome: params.name,
+        mensagem: params.message,
+        ...params.extra,
+      }),
       signal: AbortSignal.timeout(10_000),
     });
 
@@ -63,7 +114,7 @@ async function postZaia(
 }
 
 /**
- * Envia o código de recuperação de senha.
+ * Código de recuperação de senha.
  * O código NUNCA é logado — só trafega no corpo do POST para a Zaia.
  */
 export async function sendPasswordResetCode(params: {
@@ -71,31 +122,13 @@ export async function sendPasswordResetCode(params: {
   code: string;
   name: string;
 }): Promise<ZaiaResult> {
-  return postZaia(
-    process.env.ZAIA_PASSWORD_RESET_WEBHOOK_URL,
-    {
-      telefone: params.phone,
-      codigo: params.code,
-      nome: params.name,
-      mensagem: `Olá, ${params.name}! Seu código para redefinir a senha da Intranet RH é ${params.code}. Ele vale por 15 minutos. Se não foi você que pediu, ignore esta mensagem.`,
-    },
-    "password-reset",
-  );
-}
-
-/** Notificação geral: decisão de férias, aviso do RH, lembrete de formulário. */
-export async function sendWhatsApp(params: {
-  phone: string;
-  name: string;
-  message: string;
-}): Promise<ZaiaResult> {
-  return postZaia(
-    process.env.ZAIA_WEBHOOK_URL,
-    {
-      telefone: params.phone,
-      nome: params.name,
-      mensagem: params.message,
-    },
-    "notificacao",
-  );
+  return sendZaia({
+    template: "password_reset",
+    phone: params.phone,
+    name: params.name,
+    message:
+      `Olá, ${params.name}! Seu código para redefinir a senha da Intranet RH é ` +
+      `${params.code}. Ele vale por 15 minutos. Se não foi você que pediu, ignore esta mensagem.`,
+    extra: { codigo: params.code },
+  });
 }
