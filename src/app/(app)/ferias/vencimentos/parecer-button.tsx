@@ -13,7 +13,7 @@ import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { CalendarClock, Sparkles, TriangleAlert, X } from "lucide-react";
+import { RefreshCw, Sparkles, TriangleAlert, X } from "lucide-react";
 
 import { gerarParecerAction, type ParecerState } from "./actions";
 
@@ -23,39 +23,30 @@ const RISCO = {
   baixo: { label: "Risco baixo", color: "success" as const },
 };
 
-export function ParecerButton({
-  userId,
-  nome,
-}: {
-  userId: string;
-  nome: string;
-}) {
+export function ParecerButton() {
   const [aberto, setAberto] = useState(false);
   const [estado, setEstado] = useState<ParecerState | null>(null);
   const [pendente, iniciar] = useTransition();
 
+  function gerar() {
+    iniciar(async () => setEstado(await gerarParecerAction()));
+  }
+
   function abrir() {
     setAberto(true);
     // Só gera na primeira abertura: reabrir para reler não gasta chamada nova.
-    if (estado) return;
-    iniciar(async () => setEstado(await gerarParecerAction(userId)));
+    if (!estado) gerar();
   }
 
   return (
     <>
-      {/*
-        Contornado, e não texto: como última coluna de uma tabela de nove, um
-        botão de texto desaparece ao lado dos chips coloridos de situação — a
-        primeira versão ficou invisível na prática.
-      */}
       <Button
-        size="small"
         variant="outlined"
         onClick={abrir}
-        startIcon={<Sparkles size={15} />}
-        sx={{ textTransform: "none", whiteSpace: "nowrap" }}
+        startIcon={<Sparkles size={17} />}
+        sx={{ whiteSpace: "nowrap" }}
       >
-        Parecer
+        Gerar parecer
       </Button>
 
       <Dialog
@@ -70,9 +61,11 @@ export function ParecerButton({
             <Typography component="span" sx={{ fontWeight: 600 }}>
               Parecer de risco e planejamento
             </Typography>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              {nome}
-            </Typography>
+            {estado?.ok && (
+              <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                {estado.fatos.escopo} · {estado.fatos.totalPessoas} pessoa(s)
+              </Typography>
+            )}
           </Stack>
           <IconButton
             onClick={() => setAberto(false)}
@@ -88,7 +81,7 @@ export function ParecerButton({
             <Stack spacing={1.5} sx={{ alignItems: "center", py: 4 }}>
               <CircularProgress size={26} />
               <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                Analisando histórico, saldo e agenda da equipe…
+                Cruzando prazos, saldos e a agenda dos próximos meses…
               </Typography>
             </Stack>
           )}
@@ -99,23 +92,26 @@ export function ParecerButton({
 
           {!pendente && estado?.ok && (
             <Stack spacing={2.5}>
-              <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap", gap: 1 }}>
+              <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1 }}>
                 <Chip
                   size="small"
                   color={RISCO[estado.parecer.risco].color}
                   label={RISCO[estado.parecer.risco].label}
                 />
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={`${estado.fatos.saldoEmAberto} dia(s) em aberto`}
-                />
-                {!estado.fatos.deadline.settled && (
+                {estado.fatos.vencidas > 0 && (
+                  <Chip size="small" color="error" variant="outlined" label={`${estado.fatos.vencidas} vencida(s)`} />
+                )}
+                {estado.fatos.criticas > 0 && (
+                  <Chip size="small" color="error" variant="outlined" label={`${estado.fatos.criticas} crítica(s)`} />
+                )}
+                {estado.fatos.atencao > 0 && (
+                  <Chip size="small" color="warning" variant="outlined" label={`${estado.fatos.atencao} em atenção`} />
+                )}
+                {estado.fatos.diasEmRiscoDeDobra > 0 && (
                   <Chip
                     size="small"
                     variant="outlined"
-                    icon={<CalendarClock size={13} />}
-                    label={`Conceder até ${estado.fatos.deadline.concessiveEnd.split("-").reverse().join("/")}`}
+                    label={`${estado.fatos.diasEmRiscoDeDobra} dia(s) em risco de dobra`}
                   />
                 )}
               </Stack>
@@ -141,29 +137,61 @@ export function ParecerButton({
               {estado.parecer.acoes.length > 0 && (
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    O que fazer
+                    Por onde começar
                   </Typography>
-                  <Stack spacing={1}>
+                  <Stack spacing={1.5}>
                     {estado.parecer.acoes.map((a, i) => (
-                      <Stack
-                        key={i}
-                        direction="row"
-                        spacing={1.5}
-                        sx={{ alignItems: "flex-start" }}
-                      >
-                        <Typography variant="body2" sx={{ flex: 1 }}>
-                          {a.oQue}
-                        </Typography>
-                        {a.ateQuando && (
-                          <Chip
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            label={`até ${a.ateQuando}`}
-                            sx={{ flex: "none" }}
-                          />
+                      <Box key={i}>
+                        <Stack
+                          direction="row"
+                          spacing={1.5}
+                          sx={{ alignItems: "flex-start" }}
+                        >
+                          <Typography variant="body2" sx={{ flex: 1 }}>
+                            <Box component="span" sx={{ color: "text.secondary", mr: 0.75 }}>
+                              {i + 1}.
+                            </Box>
+                            {a.oQue}
+                          </Typography>
+                          {a.ateQuando && (
+                            <Chip
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              label={`até ${a.ateQuando}`}
+                              sx={{ flex: "none" }}
+                            />
+                          )}
+                        </Stack>
+                        {a.quem.length > 0 && (
+                          <Typography
+                            variant="caption"
+                            sx={{ color: "text.secondary", pl: 2.5 }}
+                          >
+                            {a.quem.join(", ")}
+                          </Typography>
                         )}
-                      </Stack>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+
+              {estado.fatos.concentracaoPorMes.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Agenda dos próximos meses
+                  </Typography>
+                  <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
+                    {estado.fatos.concentracaoPorMes.map((m) => (
+                      <Chip
+                        key={m.mes}
+                        size="small"
+                        variant="outlined"
+                        color={m.pessoas.length >= 3 ? "warning" : "default"}
+                        label={`${m.mes}: ${m.pessoas.length}`}
+                        title={m.pessoas.join(", ")}
+                      />
                     ))}
                   </Stack>
                 </Box>
@@ -171,20 +199,24 @@ export function ParecerButton({
 
               <Divider />
 
-              <Stack spacing={0.5}>
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  Admissão em {estado.fatos.admissao.split("-").reverse().join("/")}
-                  {estado.fatos.setor && ` · ${estado.fatos.setor}`}
-                  {estado.fatos.gestor && ` · gestor: ${estado.fatos.gestor}`}
-                  {" · "}
-                  {estado.fatos.diasUsufruidos} dia(s) usufruídos em{" "}
-                  {estado.fatos.historico.length} solicitação(ões)
-                </Typography>
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{ alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}
+              >
+                <Typography variant="caption" sx={{ color: "text.secondary", flex: 1 }}>
                   {estado.parecer.fromModel
-                    ? "Parecer redigido por IA a partir de números apurados pelo sistema. Os prazos e o saldo são calculados em código, não pelo modelo — confira sempre antes de comunicar."
+                    ? "Parecer redigido por IA a partir de números apurados pelo sistema. Prazos e saldos são calculados em código, não pelo modelo — confira antes de comunicar."
                     : "IA indisponível no momento: este parecer foi montado direto dos números apurados pelo sistema."}
                 </Typography>
+                <Button
+                  size="small"
+                  onClick={gerar}
+                  startIcon={<RefreshCw size={14} />}
+                  sx={{ flex: "none" }}
+                >
+                  Gerar de novo
+                </Button>
               </Stack>
             </Stack>
           )}

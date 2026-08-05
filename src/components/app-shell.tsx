@@ -19,10 +19,9 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import NextLink from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, LogOut, Menu as MenuIcon } from "lucide-react";
+import { LogOut, Menu as MenuIcon } from "lucide-react";
 
 import { Logo } from "@/components/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
 import type { Role } from "@/db/schema";
 import { useLocalFlag } from "@/lib/client-state";
 import { navFor, ROLE_LABEL, SECTION_ORDER } from "@/lib/nav";
@@ -187,12 +186,27 @@ export function AppShell({
         sx={{ zIndex: (t) => t.zIndex.drawer + 1, height: APPBAR_HEIGHT }}
       >
         <Toolbar sx={{ minHeight: `${APPBAR_HEIGHT}px !important`, gap: 1.5 }}>
+          {/*
+            Dois botões e não um: no celular o hambúrguer abre a gaveta
+            temporária, no desktop ele recolhe a fixa. São estados diferentes, e
+            resolver por media query em JS exigiria saber a largura antes de
+            renderizar — o CSS já sabe.
+          */}
           <IconButton
             color="inherit"
             edge="start"
             onClick={() => setMobileOpen((v) => !v)}
             sx={{ display: { md: "none" } }}
             aria-label="Abrir menu"
+          >
+            <MenuIcon size={22} />
+          </IconButton>
+          <IconButton
+            color="inherit"
+            edge="start"
+            onClick={() => setRecolhido(!recolhido)}
+            sx={{ display: { xs: "none", md: "inline-flex" } }}
+            aria-label={recolhido ? "Expandir menu" : "Recolher menu"}
           >
             <MenuIcon size={22} />
           </IconButton>
@@ -250,8 +264,6 @@ export function AppShell({
                 {user.email}
               </Typography>
             </Box>
-            <Divider />
-            <ThemeToggle />
             <Divider />
             {/* O form envolve o MenuItem: `action` no MenuItem colidiria com a
                 prop `action` (ref de imperative handle) do ButtonBase. */}
@@ -311,20 +323,6 @@ export function AppShell({
           <Toolbar sx={{ minHeight: `${APPBAR_HEIGHT}px !important` }} />
           {conteudoDrawer(recolhido)}
 
-          {/* Fica no rodapé da gaveta, e não na barra do topo: é o menu que
-              ele controla, e ali continua alcançável em qualquer rolagem. */}
-          <Divider />
-          <Box sx={{ display: "flex", justifyContent: recolhido ? "center" : "flex-end", p: 0.5 }}>
-            <Tooltip title={recolhido ? "Expandir menu" : "Recolher menu"} placement="right" arrow>
-              <IconButton
-                size="small"
-                onClick={() => setRecolhido(!recolhido)}
-                aria-label={recolhido ? "Expandir menu" : "Recolher menu"}
-              >
-                {recolhido ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-              </IconButton>
-            </Tooltip>
-          </Box>
         </Drawer>
       </Box>
 

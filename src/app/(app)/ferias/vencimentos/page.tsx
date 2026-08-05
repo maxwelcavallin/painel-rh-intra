@@ -47,7 +47,12 @@ export default async function VencimentosPage() {
 
   return (
     <Stack spacing={3}>
-      <Stack spacing={0.5}>
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{ alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}
+      >
+        <Stack spacing={0.5} sx={{ flex: 1, minWidth: 280 }}>
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
           Vencimento de férias
         </Typography>
@@ -56,10 +61,10 @@ export default async function VencimentosPage() {
             ? "Toda a empresa."
             : "Sua equipe direta."}{" "}
           O prazo que importa é o de <strong>concessão</strong>: passar dele
-          obriga a empresa a pagar em dobro (art. 137 da CLT). Use o botão{" "}
-          <strong>Parecer</strong>, na última coluna, para uma análise de risco
-          e um plano de ação por pessoa.
+          obriga a empresa a pagar em dobro (art. 137 da CLT).
         </Typography>
+        </Stack>
+        <ParecerButton />
       </Stack>
 
       {urgentes.length > 0 ? (
@@ -87,24 +92,6 @@ export default async function VencimentosPage() {
                 <TableCell align="right">Prazo</TableCell>
                 <TableCell align="right">Saldo</TableCell>
                 <TableCell>Situação</TableCell>
-                {/*
-                  Grudada na direita: com nove colunas a tabela rola na
-                  horizontal em tela de notebook, e a coluna de ação some
-                  justamente por ser a última.
-                */}
-                <TableCell
-                  align="right"
-                  sx={{
-                    position: "sticky",
-                    right: 0,
-                    bgcolor: "background.paper",
-                    borderLeft: "1px solid",
-                    borderLeftColor: "divider",
-                    zIndex: 3,
-                  }}
-                >
-                  Análise
-                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -170,18 +157,6 @@ export default async function VencimentosPage() {
                         )}
                       </Stack>
                     </TableCell>
-                    <TableCell
-                      align="right"
-                      sx={{
-                        position: "sticky",
-                        right: 0,
-                        bgcolor: "background.paper",
-                        borderLeft: "1px solid",
-                        borderLeftColor: "divider",
-                      }}
-                    >
-                      <ParecerButton userId={s.userId} nome={s.name} />
-                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -194,9 +169,9 @@ export default async function VencimentosPage() {
         <Typography variant="caption" sx={{ color: "text.secondary" }}>
           Quem está vencido ou crítico recebe aviso automático na passada diária
           — colaborador e gestor. Quem já marcou férias sai da urgência.
-          O <strong>parecer</strong> cruza histórico, saldo, prazo e agenda da
-          equipe para sugerir o que combinar e até quando; os números vêm do
-          cálculo do sistema, não do modelo.
+          O <strong>parecer</strong> cruza todos os prazos, saldos e a agenda dos
+          próximos meses para dizer por onde começar; os números vêm do cálculo
+          do sistema, não do modelo.
         </Typography>
       </Box>
     </Stack>

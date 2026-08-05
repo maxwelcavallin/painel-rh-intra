@@ -49,17 +49,3 @@ export function useLocalFlag(
   return [valor, definir];
 }
 
-/**
- * `false` no servidor e no primeiro render, `true` depois de hidratar.
- *
- * Serve para adiar a renderização de algo que depende de estado do cliente —
- * como o tema escolhido — sem que servidor e cliente produzam marcações
- * diferentes.
- */
-export function useHidratado(): boolean {
-  return useSyncExternalStore(
-    inscrever,
-    () => true,
-    () => false,
-  );
-}

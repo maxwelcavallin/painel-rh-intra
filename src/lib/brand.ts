@@ -21,22 +21,6 @@ export const mosaic = {
 } as const;
 
 /**
- * A mesma paleta para o modo escuro.
- *
- * Os tons claros do mosaico (#DDE4EA) somem sobre fundo escuro e os escuros
- * (#546C84) viram borrão. Aqui a escala é reordenada para a leitura continuar
- * a mesma: `100` segue sendo o mais claro do conjunto, só que agora "claro"
- * quer dizer legível sobre escuro.
- */
-export const mosaicDark = {
-  100: "#C3D2DF",
-  300: "#9CB1C4",
-  500: "#7C93A9",
-  700: "#5E7386",
-  gray: "#4A5560",
-} as const;
-
-/**
  * Mapa único de status → cor do tema.
  * Reaproveitado em Chips de férias e de formulários — nunca cor "livre".
  */
