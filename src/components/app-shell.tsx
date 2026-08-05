@@ -15,17 +15,23 @@ import ListSubheader from "@mui/material/ListSubheader";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Toolbar from "@mui/material/Toolbar";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import NextLink from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Menu as MenuIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut, Menu as MenuIcon } from "lucide-react";
 
 import { Logo } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 import type { Role } from "@/db/schema";
+import { useLocalFlag } from "@/lib/client-state";
 import { navFor, ROLE_LABEL, SECTION_ORDER } from "@/lib/nav";
 
 const DRAWER_WIDTH = 240;
+/** Largura recolhida: cabe o ícone centralizado e mais nada. */
+const DRAWER_WIDTH_MINI = 64;
 const APPBAR_HEIGHT = 56;
+const CHAVE_MENU = "menu-recolhido";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -47,12 +53,22 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
 
+  // A escolha sobrevive ao recarregamento. O retrato do servidor é "expandido",
+  // então quem prefere recolhido vê um quadro com o menu aberto — o preço de
+  // não haver localStorage no servidor.
+  const [recolhido, setRecolhido] = useLocalFlag(CHAVE_MENU);
+
   const items = navFor(user.role);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
-  const drawerContent = (
+  /**
+   * `mini` é parâmetro e não leitura direta do estado: o drawer temporário
+   * do celular usa o mesmo conteúdo e ali recolher não faz sentido — a
+   * gaveta já é a navegação inteira.
+   */
+  const conteudoDrawer = (mini: boolean) => (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Toolbar
         sx={{
@@ -85,6 +101,16 @@ export function AppShell({
                     textTransform: "uppercase",
                     color: "text.secondary",
                     lineHeight: 2.5,
+                    // No mini o rótulo não cabe; um traço mantém o
+                    // agrupamento visível sem texto cortado.
+                    ...(mini && {
+                      textIndent: "-9999px",
+                      overflow: "hidden",
+                      borderTop: "1px solid",
+                      borderTopColor: "divider",
+                      mx: 1.5,
+                      lineHeight: 1.4,
+                    }),
                   }}
                 >
                   {section}
@@ -103,6 +129,7 @@ export function AppShell({
                     sx={{
                       mx: 1,
                       borderRadius: 1,
+                      ...(mini && { justifyContent: "center", px: 1.25 }),
                       "&.Mui-selected": {
                         bgcolor: "primary.main",
                         color: "primary.contrastText",
@@ -113,17 +140,25 @@ export function AppShell({
                       },
                     }}
                   >
-                    <ListItemIcon sx={{ minWidth: 34 }}>
-                      <Icon size={18} />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={label}
-                      slotProps={{
-                        primary: {
-                          sx: { fontSize: 14, fontWeight: active ? 600 : 400 },
-                        },
-                      }}
-                    />
+                    {/* Recolhido, o ícone é a única pista do destino —
+                        sem tooltip o menu vira adivinhação. */}
+                    <Tooltip title={mini ? label : ""} placement="right" arrow>
+                      <ListItemIcon
+                        sx={{ minWidth: mini ? 0 : 34, justifyContent: "center" }}
+                      >
+                        <Icon size={18} />
+                      </ListItemIcon>
+                    </Tooltip>
+                    {!mini && (
+                      <ListItemText
+                        primary={label}
+                        slotProps={{
+                          primary: {
+                            sx: { fontSize: 14, fontWeight: active ? 600 : 400 },
+                          },
+                        }}
+                      />
+                    )}
                   </ListItemButton>
                 );
               })}
@@ -133,8 +168,14 @@ export function AppShell({
       </Box>
 
       <Divider />
-      <Box sx={{ p: 2 }}>
-        <Logo size={26} />
+      <Box
+        sx={{
+          p: mini ? 1 : 2,
+          display: "flex",
+          justifyContent: mini ? "center" : "flex-start",
+        }}
+      >
+        <Logo size={mini ? 18 : 26} iconOnly={mini} />
       </Box>
     </Box>
   );
@@ -169,7 +210,9 @@ export function AppShell({
             </Typography>
             <Typography
               variant="caption"
-              sx={{ color: "rgba(255,255,255,0.75)", lineHeight: 1 }}
+              // Herda a cor da AppBar em vez de branco fixo: no claro a barra
+              // é azul da marca, no escuro é superfície com texto claro.
+              sx={{ color: "inherit", opacity: 0.75, lineHeight: 1 }}
             >
               {ROLE_LABEL[user.role]}
             </Typography>
@@ -208,6 +251,8 @@ export function AppShell({
               </Typography>
             </Box>
             <Divider />
+            <ThemeToggle />
+            <Divider />
             {/* O form envolve o MenuItem: `action` no MenuItem colidiria com a
                 prop `action` (ref de imperative handle) do ButtonBase. */}
             <Box component="form" action={logout}>
@@ -224,7 +269,13 @@ export function AppShell({
         </Toolbar>
       </AppBar>
 
-      <Box component="nav" sx={{ width: { md: DRAWER_WIDTH }, flexShrink: 0 }}>
+      <Box
+        component="nav"
+        sx={{
+          width: { md: recolhido ? DRAWER_WIDTH_MINI : DRAWER_WIDTH },
+          flexShrink: 0,
+        }}
+      >
         <Drawer
           variant="temporary"
           open={mobileOpen}
@@ -235,7 +286,7 @@ export function AppShell({
             "& .MuiDrawer-paper": { width: DRAWER_WIDTH, boxSizing: "border-box" },
           }}
         >
-          {drawerContent}
+          {conteudoDrawer(false)}
         </Drawer>
 
         <Drawer
@@ -244,15 +295,36 @@ export function AppShell({
           sx={{
             display: { xs: "none", md: "block" },
             "& .MuiDrawer-paper": {
-              width: DRAWER_WIDTH,
+              width: recolhido ? DRAWER_WIDTH_MINI : DRAWER_WIDTH,
               boxSizing: "border-box",
               borderRight: "1px solid",
               borderColor: "divider",
+              overflowX: "hidden",
+              transition: (t) =>
+                t.transitions.create("width", {
+                  easing: t.transitions.easing.sharp,
+                  duration: t.transitions.duration.shorter,
+                }),
             },
           }}
         >
           <Toolbar sx={{ minHeight: `${APPBAR_HEIGHT}px !important` }} />
-          {drawerContent}
+          {conteudoDrawer(recolhido)}
+
+          {/* Fica no rodapé da gaveta, e não na barra do topo: é o menu que
+              ele controla, e ali continua alcançável em qualquer rolagem. */}
+          <Divider />
+          <Box sx={{ display: "flex", justifyContent: recolhido ? "center" : "flex-end", p: 0.5 }}>
+            <Tooltip title={recolhido ? "Expandir menu" : "Recolher menu"} placement="right" arrow>
+              <IconButton
+                size="small"
+                onClick={() => setRecolhido(!recolhido)}
+                aria-label={recolhido ? "Expandir menu" : "Recolher menu"}
+              >
+                {recolhido ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Drawer>
       </Box>
 
@@ -260,7 +332,9 @@ export function AppShell({
         component="main"
         sx={{
           flexGrow: 1,
-          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          width: {
+            md: `calc(100% - ${recolhido ? DRAWER_WIDTH_MINI : DRAWER_WIDTH}px)`,
+          },
           bgcolor: "background.default",
           minHeight: "100dvh",
         }}

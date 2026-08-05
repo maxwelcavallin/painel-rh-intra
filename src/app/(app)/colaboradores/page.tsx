@@ -12,7 +12,7 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
-import { MapPin, Pencil, UserPlus } from "lucide-react";
+import { Download, MapPin, Pencil, UserPlus } from "lucide-react";
 
 import { requireRH } from "@/lib/dal";
 import { formatDateBR, formatPhone } from "@/lib/format";
@@ -45,13 +45,28 @@ export default async function ColaboradoresPage({
             {employees.length} cadastrado(s)
           </Typography>
         </Box>
-        <Button
-          href="/colaboradores/novo"
-          variant="contained"
-          startIcon={<UserPlus size={18} />}
-        >
-          Novo colaborador
-        </Button>
+        <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
+          {/*
+            `download` com href direto, sem client component: a rota devolve o
+            arquivo e o navegador salva. Um botão com onClick e fetch teria de
+            reconstruir o Content-Disposition na mão.
+          */}
+          <Button
+            href="/api/relatorios/colaboradores"
+            download
+            variant="outlined"
+            startIcon={<Download size={18} />}
+          >
+            Exportar CSV
+          </Button>
+          <Button
+            href="/colaboradores/novo"
+            variant="contained"
+            startIcon={<UserPlus size={18} />}
+          >
+            Novo colaborador
+          </Button>
+        </Stack>
       </Stack>
 
       {params.salvo === "1" && (
