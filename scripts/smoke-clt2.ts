@@ -6,6 +6,7 @@
  */
 
 import {
+  closedAcquisitivePeriods,
   COMPANY_NOTICE_DAYS,
   isBusinessDay,
   LEGAL_NOTICE_DAYS,
@@ -77,23 +78,47 @@ check(
 );
 check("recuar 0 dias úteis não move", subtractBusinessDays("2026-08-10", 0), "2026-08-10");
 
-console.log("\n— Período concessivo (arts. 134 e 137)");
-// Admitido em 15/08/2022. Em 10/09/2026 o aquisitivo corrente é 2026-2027;
-// o que está VENCENDO é 15/08/2025 a 14/08/2026, com concessão até 14/08/2027.
-const d1 = vacationDeadlineFor("2022-08-15", "2026-09-10");
-check("aquisitivo que está vencendo", d1.acquisitive, { start: "2025-08-15", end: "2026-08-14" });
-check("prazo de concessão", d1.concessiveEnd, "2027-08-14");
-check("ainda não venceu", d1.expired, false);
+console.log("\n— Períodos fechados");
+// Admitido em 15/08/2022. Em 10/09/2026 fecharam 4 ciclos:
+// 22-23, 23-24, 24-25 e 25-26.
+const fechados = closedAcquisitivePeriods("2022-08-15", "2026-09-10");
+check("4 períodos fechados", fechados.length, 4);
+check("o mais antigo", { start: fechados[0].start, end: fechados[0].end }, { start: "2022-08-15", end: "2023-08-14" });
+check("concessão do mais antigo", fechados[0].concessiveEnd, "2024-08-14");
+check("o mais recente", fechados[3].concessiveEnd, "2027-08-14");
+check("no primeiro ano de casa não há nada fechado", closedAcquisitivePeriods("2026-03-01", "2026-08-05").length, 0);
 
-// Alguém admitido há muito tempo e que nunca tirou: em 2026 o prazo do
-// período 2024-2025 já passou.
-const d2 = vacationDeadlineFor("2019-03-11", "2026-08-05");
-check("prazo no futuro para quem está em dia", d2.expired, false);
+console.log("\n— Período concessivo: prende o MAIS ANTIGO em aberto (arts. 134 e 137)");
+// Quem nunca tirou nada em 2026: o período 22-23 venceu em 14/08/2024.
+const nunca = vacationDeadlineFor("2022-08-15", "2026-09-10", 0);
+check("prende o período de 2022-2023", nunca.acquisitive, { start: "2022-08-15", end: "2023-08-14" });
+check("prazo era 14/08/2024", nunca.concessiveEnd, "2024-08-14");
+check("VENCIDO", nunca.expired, true);
+check("dias negativos", nunca.daysUntilDeadline < 0, true);
+check("30 dias em aberto nesse período", nunca.daysRemainingInPeriod, 30);
 
-// Caso de vencimento: referência DEPOIS do fim do concessivo.
-const d3 = vacationDeadlineFor("2022-08-15", "2027-09-01");
-check("aquisitivo vencido", d3.acquisitive, { start: "2026-08-15", end: "2027-08-14" });
-check("concessão até 14/08/2028", d3.concessiveEnd, "2028-08-14");
+// Quem já tirou 90 dias quitou os três primeiros períodos; prende o quarto.
+const tresQuitados = vacationDeadlineFor("2022-08-15", "2026-09-10", 90);
+check("prende o período de 2025-2026", tresQuitados.acquisitive, { start: "2025-08-15", end: "2026-08-14" });
+check("prazo 14/08/2027", tresQuitados.concessiveEnd, "2027-08-14");
+check("não venceu", tresQuitados.expired, false);
+
+// Quem tirou 45 dias quitou o primeiro e usou 15 do segundo.
+const meio = vacationDeadlineFor("2022-08-15", "2026-09-10", 45);
+check("prende o segundo período", meio.acquisitive, { start: "2023-08-15", end: "2024-08-14" });
+check("restam 15 dias nele", meio.daysRemainingInPeriod, 15);
+check("também já venceu", meio.expired, true);
+
+// Quem tirou os 120 dias dos quatro períodos está quite.
+const quite = vacationDeadlineFor("2022-08-15", "2026-09-10", 120);
+check("quitado", quite.settled, true);
+check("não venceu nada", quite.expired, false);
+check("nada em aberto", quite.daysRemainingInPeriod, 0);
+
+// Primeiro ano de casa: direito ainda nem nasceu.
+const novato = vacationDeadlineFor("2026-03-01", "2026-08-05", 0);
+check("novato não tem prazo correndo", novato.settled, true);
+check("novato não está vencido", novato.expired, false);
 
 console.log(
   `\n${failed === 0 ? "✔" : "✖"} ${passed} verificações ok, ${failed} falha(s).\n`,

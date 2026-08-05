@@ -21,7 +21,10 @@
     "test:agente": "tsx --conditions=react-server scripts/smoke-agente.ts",
     "test:colaborador": "tsx --conditions=react-server scripts/smoke-colaborador.ts",
     "test:avisos": "tsx --conditions=react-server scripts/smoke-avisos.ts",
-    "test:formularios": "tsx --conditions=react-server scripts/smoke-formularios.ts"
+    "test:vencimentos": "tsx --conditions=react-server scripts/smoke-vencimentos.ts",
+    "test:controle": "tsx --conditions=react-server scripts/smoke-controle.ts",
+    "test:formularios": "tsx --conditions=react-server scripts/smoke-formularios.ts",
+    "test:all": "npm run test:clt && npm run test:clt2 && npm run test:cadastro && npm run test:colaborador && npm run test:avisos && npm run test:formularios && npm run test:ferias && npm run test:vencimentos && npm run test:controle && npm run test:agente && npm run db:seed"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

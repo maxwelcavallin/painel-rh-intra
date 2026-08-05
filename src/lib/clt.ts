@@ -301,47 +301,117 @@ export function validateAbono(params: {
 /* Período concessivo e vencimento (arts. 134 e 137)                   */
 /* ------------------------------------------------------------------ */
 
-export type VacationDeadline = {
-  acquisitive: AcquisitivePeriod;
-  /** Último dia para CONCEDER sem pagar em dobro. */
+export type ClosedPeriod = AcquisitivePeriod & {
+  /** Último dia para CONCEDER as férias deste período sem pagar em dobro. */
   concessiveEnd: string;
-  /** Dias restantes até esse limite. Negativo = já venceu. */
+};
+
+/** Soma 12 meses a uma data ISO, preservando o dia. */
+function addOneYear(isoDate: string): string {
+  const d = toUTC(isoDate);
+  return toISO(
+    new Date(Date.UTC(d.getUTCFullYear() + 1, d.getUTCMonth(), d.getUTCDate())),
+  );
+}
+
+/**
+ * Todos os períodos aquisitivos que já FECHARAM, do mais antigo ao mais novo,
+ * cada um com seu prazo de concessão (12 meses após o fechamento).
+ */
+export function closedAcquisitivePeriods(
+  admissionISO: string,
+  todayISO: string,
+): ClosedPeriod[] {
+  const periods: ClosedPeriod[] = [];
+  let cursor = admissionISO;
+
+  // Teto de 60 ciclos: cobre uma carreira inteira e impede laço infinito se
+  // uma data vier corrompida.
+  for (let guard = 0; guard < 60; guard++) {
+    const period = acquisitivePeriodFor(admissionISO, cursor);
+    if (period.end >= todayISO) break; // ainda em curso
+    periods.push({ ...period, concessiveEnd: addOneYear(period.end) });
+    cursor = addDays(period.end, 1);
+  }
+
+  return periods;
+}
+
+export type VacationDeadline = {
+  /** O período que está prendendo — o mais antigo ainda não quitado. */
+  acquisitive: AcquisitivePeriod;
+  concessiveEnd: string;
+  /** Dias até o limite. Negativo = já venceu. */
   daysUntilDeadline: number;
   expired: boolean;
+  /** Dias que faltam usufruir do período que prende. */
+  daysRemainingInPeriod: number;
+  /** Todos os períodos fechados, para a tela mostrar o histórico. */
+  closedPeriods: ClosedPeriod[];
+  /** Nada em aberto: tudo que venceu já foi usufruído. */
+  settled: boolean;
 };
 
 /**
- * Prazo real que interessa ao RH: não é quando o direito nasce, é quando ele
- * VENCE. O período concessivo são os 12 meses seguintes ao fim do aquisitivo;
- * passar disso obriga a pagar em dobro (art. 137).
+ * Prazo que de fato prende o RH.
+ *
+ * Não é o período mais recente que fechou — esse tem sempre 12 meses pela
+ * frente e nunca estaria vencido. É o MAIS ANTIGO ainda não quitado.
+ *
+ * Os períodos são consumidos em ordem (FIFO): 45 dias usufruídos quitam o
+ * primeiro período inteiro e deixam 15 no segundo. Por isso o cálculo precisa
+ * de `daysAlreadyTaken`, que só o banco sabe.
  */
 export function vacationDeadlineFor(
   admissionISO: string,
   todayISO: string,
+  daysAlreadyTaken = 0,
 ): VacationDeadline {
-  const acquisitive = acquisitivePeriodFor(admissionISO, todayISO);
+  const closedPeriods = closedAcquisitivePeriods(admissionISO, todayISO);
 
-  // O período aquisitivo que está VENCENDO é o anterior ao corrente: ele
-  // fechou e agora corre o prazo de concessão.
-  const closed = acquisitivePeriodFor(admissionISO, addDays(acquisitive.start, -1));
+  // Ainda no primeiro período aquisitivo: não há prazo de concessão correndo.
+  if (closedPeriods.length === 0) {
+    const current = acquisitivePeriodFor(admissionISO, todayISO);
+    const concessiveEnd = addOneYear(current.end);
+    return {
+      acquisitive: current,
+      concessiveEnd,
+      daysUntilDeadline: daysBetweenInclusive(todayISO, concessiveEnd) - 1,
+      expired: false,
+      daysRemainingInPeriod: 0,
+      closedPeriods,
+      settled: true,
+    };
+  }
 
-  const end = toUTC(closed.end);
-  const concessiveEnd = toISO(
-    new Date(
-      Date.UTC(
-        end.getUTCFullYear() + 1,
-        end.getUTCMonth(),
-        end.getUTCDate(),
-      ),
-    ),
-  );
+  const fullyCovered = Math.floor(daysAlreadyTaken / MAX_DAYS_PER_PERIOD);
 
-  const daysUntilDeadline = daysBetweenInclusive(todayISO, concessiveEnd) - 1;
+  // Tudo que venceu já foi usufruído — o relógio não está correndo.
+  if (fullyCovered >= closedPeriods.length) {
+    const last = closedPeriods[closedPeriods.length - 1];
+    return {
+      acquisitive: { start: last.start, end: last.end },
+      concessiveEnd: last.concessiveEnd,
+      daysUntilDeadline: daysBetweenInclusive(todayISO, last.concessiveEnd) - 1,
+      expired: false,
+      daysRemainingInPeriod: 0,
+      closedPeriods,
+      settled: true,
+    };
+  }
+
+  const binding = closedPeriods[fullyCovered];
+  const usedInBinding = daysAlreadyTaken - fullyCovered * MAX_DAYS_PER_PERIOD;
+  const daysUntilDeadline =
+    daysBetweenInclusive(todayISO, binding.concessiveEnd) - 1;
 
   return {
-    acquisitive: closed,
-    concessiveEnd,
+    acquisitive: { start: binding.start, end: binding.end },
+    concessiveEnd: binding.concessiveEnd,
     daysUntilDeadline,
     expired: daysUntilDeadline < 0,
+    daysRemainingInPeriod: MAX_DAYS_PER_PERIOD - usedInBinding,
+    closedPeriods,
+    settled: false,
   };
 }

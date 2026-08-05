@@ -6,12 +6,22 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import bcrypt from "bcryptjs";
 
+import {
+  addDays,
+  closedAcquisitivePeriods,
+  MAX_DAYS_PER_PERIOD,
+} from "../lib/clt";
 import { isValidCpf } from "../lib/format";
 
 import * as schema from "./schema";
 import {
+  broadcastDeliveries,
+  broadcasts,
+  formResponses,
+  forms,
   notificationSettings,
   notifications,
+  passwordResetCodes,
   users,
   vacationRequests,
 } from "./schema";
@@ -56,10 +66,29 @@ const SENHA_DEMO = {
   user: "Colab@2026",
 };
 
+/**
+ * Data de referência do histórico de férias.
+ *
+ * As situações que a tela de vencimento deve exibir (vencida, crítica, atenção)
+ * dependem de onde HOJE cai em relação aos períodos concessivos. Rodando o seed
+ * meses depois, as pessoas escorregam para o vermelho — é o comportamento
+ * correto do cálculo, mas o roteiro da demonstração deixa de bater. Se isso
+ * acontecer, ajuste as contagens de `historico()` em vez de mexer no cálculo.
+ */
+const HOJE = new Date().toISOString().slice(0, 10);
+
 async function main() {
   console.log("Limpando tabelas…");
-  // Ordem importa: filhos antes dos pais (FKs com cascade, mas explícito é melhor).
+  // Ordem importa: TODO filho antes do pai. Qualquer tabela que referencie
+  // `users` precisa entrar aqui — inclusive as que guardam só o autor da ação,
+  // como `notification_settings.updated_by` e `broadcasts.created_by`.
+  await db.delete(formResponses);
+  await db.delete(forms);
+  await db.delete(broadcastDeliveries);
+  await db.delete(broadcasts);
+  await db.delete(notificationSettings);
   await db.delete(notifications);
+  await db.delete(passwordResetCodes);
   await db.delete(vacationRequests);
   await db.delete(users);
 
@@ -244,7 +273,9 @@ async function main() {
         sector: "Operações",
         position: "Analista de Suporte",
         managerId: gestorOps.id,
-        admissionDate: "2021-11-22",
+        // Outubro (e não novembro) para o período concessivo dele cair na faixa
+        // de "atenção" da tela de vencimento — o caso intermediário do painel.
+        admissionDate: "2021-10-08",
         employmentType: "clt",
         phone: "(41) 99000-0006",
         discordHandle: "tiago.ops",
@@ -295,7 +326,115 @@ async function main() {
         gender: "Feminino",
       },
     ])
-    .returning({ id: users.id, name: users.name });
+    .returning({ id: users.id, email: users.email, admissionDate: users.admissionDate });
+
+  console.log("Gerando histórico de férias…");
+  /**
+   * Sem histórico, a tela de vencimento acusa TODO MUNDO como vencido — o que é
+   * matematicamente correto (ninguém nunca tirou férias) e completamente inútil
+   * de olhar: sete linhas vermelhas não mostram o que o painel faz.
+   *
+   * Aqui cada pessoa recebe férias passadas suficientes para cair numa situação
+   * escolhida. O resultado é o espectro que a tela existe para mostrar:
+   * uma pessoa vencida, uma crítica, uma em atenção e o resto em dia.
+   *
+   * `periodos` = quantos períodos aquisitivos fechados já foram usufruídos,
+   * do mais antigo para o mais novo (é assim que a lei consome o saldo).
+   */
+  async function historico(userId: string, admissao: string, periodos: number) {
+    const fechados = closedAcquisitivePeriods(admissao, HOJE);
+    const linhas = fechados.slice(0, periodos).map((p) => {
+      // Gozadas ~3 meses depois de o período fechar: dentro da janela de
+      // concessão, como aconteceria de verdade.
+      const inicio = addDays(p.end, 90);
+      return {
+        userId,
+        startDate: inicio,
+        endDate: addDays(inicio, MAX_DAYS_PER_PERIOD - 1),
+        days: MAX_DAYS_PER_PERIOD,
+        status: "approved" as const,
+        rhApproval: "approved" as const,
+        managerApproval: "approved" as const,
+        // Sem `paymentDueDate`: férias antigas não devem reaparecer na tela de
+        // controle operacional, que é a fila de trabalho do mês.
+      };
+    });
+    if (linhas.length > 0) await db.insert(vacationRequests).values(linhas);
+    return linhas.length;
+  }
+
+  const colab = (email: string) => {
+    const achado = colaboradores.find((c) => c.email.startsWith(`${email}.`));
+    if (!achado) throw new Error(`Colaborador "${email}" não encontrado no seed.`);
+    return achado;
+  };
+  const bruno = colab("bruno");
+  const camila = colab("camila");
+  const tiago = colab("tiago");
+  const larissa = colab("larissa");
+
+  // Quantos períodos cada um já usufruiu, e a situação que isso produz em HOJE.
+  await historico(gestorOps.id, "2018-06-04", 7); // Patrícia — em dia
+  await historico(rh.id, "2019-03-11", 6); // Helena — em dia
+  await historico(gestorTec.id, "2020-01-20", 5); // Rodrigo — em dia
+  await historico(camila.id, camila.admissionDate!, 3); // quitada
+  await historico(tiago.id, tiago.admissionDate!, 3); // ATENÇÃO: vence 07/10/2026
+  await historico(bruno.id, bruno.admissionDate!, 2); // CRÍTICO: vence 14/08/2026
+  // Larissa fica sem nada de propósito: o período dela venceu em 12/05/2026 e
+  // ninguém viu. É exatamente o caso que justifica o painel existir.
+  void larissa;
+
+  console.log("Gerando a fila do controle operacional…");
+  /**
+   * Férias já aprovadas e à frente, para a tela de controle não abrir vazia.
+   * Cada linha mostra um estágio diferente do fluxo: pendente de tudo,
+   * pendente de pagamento, e concluída.
+   */
+  await db.insert(vacationRequests).values([
+    {
+      // Tudo pendente: o RH ainda precisa colher recibo e pagar.
+      userId: gestorTec.id,
+      startDate: "2026-09-14",
+      endDate: "2026-10-03",
+      days: 20,
+      abonoPecuniario: true,
+      abonoDays: 10,
+      advance13th: true,
+      status: "approved",
+      rhApproval: "approved",
+      managerApproval: "approved",
+      paymentDueDate: "2026-09-10", // 2 dias úteis antes (art. 145)
+    },
+    {
+      // Recibo assinado, pagamento em aberto.
+      userId: camila.id,
+      startDate: "2026-08-24",
+      endDate: "2026-09-06",
+      days: 14,
+      status: "approved",
+      rhApproval: "approved",
+      managerApproval: "approved",
+      paymentDueDate: "2026-08-20",
+      receiptSignedAt: new Date(),
+      receiptRegisteredBy: rh.id,
+    },
+    {
+      // Ciclo completo, já repassada à Senior.
+      userId: gestorOps.id,
+      startDate: "2026-08-10",
+      endDate: "2026-08-24",
+      days: 15,
+      status: "approved",
+      rhApproval: "approved",
+      managerApproval: "approved",
+      paymentDueDate: "2026-08-06",
+      receiptSignedAt: new Date(),
+      receiptRegisteredBy: rh.id,
+      paidAt: new Date(),
+      paidBy: rh.id,
+      reportedToSeniorAt: new Date(),
+    },
+  ]);
 
   console.log("Configurando a central de comunicações…");
   /**
@@ -317,7 +456,6 @@ async function main() {
     "form_reminder",
   ] as const;
 
-  await db.delete(notificationSettings);
   await db.insert(notificationSettings).values(
     tipos.flatMap((tipo) => [
       { type: tipo, channel: "whatsapp" as const, enabled: true, updatedBy: rh.id },

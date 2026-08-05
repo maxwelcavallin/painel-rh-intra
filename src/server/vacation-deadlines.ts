@@ -8,7 +8,6 @@ import {
   COMPANY_NOTICE_DAYS,
   daysBetweenInclusive,
   formatBR,
-  MAX_DAYS_PER_PERIOD,
   vacationDeadlineFor,
   type VacationDeadline,
 } from "@/lib/clt";
@@ -45,10 +44,10 @@ const WARNING_DAYS = 90;
 
 function severityFor(
   deadline: VacationDeadline,
-  daysRemaining: number,
   hasScheduled: boolean,
 ): ExpiringVacation["severity"] {
-  if (daysRemaining <= 0) return "ok"; // já usufruiu tudo do período
+  // `settled` = tudo que venceu já foi usufruído. Não há relógio correndo.
+  if (deadline.settled) return "ok";
   if (deadline.expired) return "expired";
   if (deadline.daysUntilDeadline <= CRITICAL_DAYS) return "critical";
   if (deadline.daysUntilDeadline <= WARNING_DAYS) {
@@ -99,22 +98,30 @@ export async function listVacationStatus(
   for (const person of people) {
     if (!person.admissionDate) continue;
 
-    const deadline = vacationDeadlineFor(person.admissionDate, todayISO);
-
     const mine = requests.filter(
-      (r) =>
-        r.userId === person.id &&
-        r.startDate >= deadline.acquisitive.start &&
-        r.startDate <= deadline.concessiveEnd &&
-        r.status !== "rejected",
+      (r) => r.userId === person.id && r.status !== "rejected",
     );
 
+    // Só o que já foi APROVADO conta como usufruído — pendente ainda pode cair.
+    // Abono consome saldo igual ao gozo.
     const daysTaken = mine
       .filter((r) => r.status === "approved")
       .reduce((sum, r) => sum + r.days + r.abonoDays, 0);
 
-    const daysRemaining = Math.max(0, MAX_DAYS_PER_PERIOD - daysTaken);
-    const hasScheduled = mine.length > 0;
+    // O prazo depende de quanto já foi usufruído: os períodos são quitados em
+    // ordem, e o que prende é o mais antigo ainda em aberto.
+    const deadline = vacationDeadlineFor(
+      person.admissionDate,
+      todayISO,
+      daysTaken,
+    );
+
+    // Solicitação que ainda VAI acontecer e cabe dentro do prazo. Férias
+    // passadas não entram: elas já foram contadas em `daysTaken` e deixariam
+    // qualquer veterano marcado como "resolvido" para sempre.
+    const hasScheduled = mine.some(
+      (r) => r.startDate >= todayISO && r.startDate <= deadline.concessiveEnd,
+    );
 
     result.push({
       userId: person.id,
@@ -127,9 +134,9 @@ export async function listVacationStatus(
       admissionDate: person.admissionDate,
       deadline,
       daysTaken,
-      daysRemaining,
+      daysRemaining: deadline.daysRemainingInPeriod,
       hasScheduled,
-      severity: severityFor(deadline, daysRemaining, hasScheduled),
+      severity: severityFor(deadline, hasScheduled),
     });
   }
 
