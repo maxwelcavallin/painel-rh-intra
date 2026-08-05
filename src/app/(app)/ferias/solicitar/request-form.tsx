@@ -6,6 +6,8 @@ import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
+import Chip from "@mui/material/Chip";
+import Collapse from "@mui/material/Collapse";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Grid from "@mui/material/Grid";
@@ -14,7 +16,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
-import { Send, Users } from "lucide-react";
+import { ChevronDown, ChevronUp, Send, Users } from "lucide-react";
 
 import { COMPANY_NOTICE_DAYS, MAX_ABONO_DAYS, MAX_DAYS_PER_PERIOD } from "@/lib/clt";
 
@@ -48,6 +50,7 @@ export function RequestForm({ team }: { team: TeamVacation[] }) {
   const [abono, setAbono] = useState(false);
   const [abonoDays, setAbonoDays] = useState(0);
   const [advance13th, setAdvance13th] = useState(false);
+  const [maisOpcoes, setMaisOpcoes] = useState(false);
 
   const days =
     start && end && end >= start ? differenceInCalendarDays(end, start) + 1 : null;
@@ -64,6 +67,14 @@ export function RequestForm({ team }: { team: TeamVacation[] }) {
 
   const total = (days ?? 0) + (abono ? abonoDays : 0);
   const excede = total > MAX_DAYS_PER_PERIOD;
+
+  /**
+   * O erro de abono mora dentro do bloco recolhido. Se ele fechasse com o erro
+   * lá dentro, o botão de enviar ficaria desabilitado sem nada na tela
+   * explicando por quê — dá para chegar nesse estado marcando o abono, fechando
+   * o bloco e depois esticando as datas.
+   */
+  const painelAberto = maisOpcoes || excede;
 
   if (state.success) {
     const rejected = state.success.status === "rejected";
@@ -156,63 +167,102 @@ export function RequestForm({ team }: { team: TeamVacation[] }) {
 
         <Divider />
 
+        {/*
+          Abono e antecipação do 13º ficam recolhidos: a maioria das
+          solicitações é só "quero tirar férias nestas datas", e duas caixas de
+          marcar com parágrafo de lei cada uma faziam o formulário parecer mais
+          burocrático do que é. Quem precisa, abre.
+        */}
         <Box>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={abono}
-                onChange={(e) => {
-                  setAbono(e.target.checked);
-                  if (!e.target.checked) setAbonoDays(0);
-                  else if (abonoDays === 0) setAbonoDays(10);
-                }}
-              />
-            }
-            label="Quero converter parte das férias em abono pecuniário"
-          />
-          <Typography variant="caption" sx={{ display: "block", color: "text.secondary", ml: 4 }}>
-            Art. 143 da CLT: até {MAX_ABONO_DAYS} dias (um terço do período) podem
-            ser vendidos. Os dias vendidos saem do mesmo saldo do gozo.
-          </Typography>
+          <Button
+            type="button"
+            size="small"
+            color="inherit"
+            onClick={() => setMaisOpcoes(!painelAberto)}
+            endIcon={painelAberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            sx={{ textTransform: "none", color: "text.secondary", px: 1, ml: -1 }}
+            aria-expanded={painelAberto}
+            aria-controls="mais-opcoes"
+          >
+            Mais opções
+          </Button>
 
-          {abono && (
-            <Box sx={{ ml: 4, mt: 1.5, maxWidth: 220 }}>
-              <TextField
-                label="Dias de abono"
-                type="number"
-                size="small"
-                fullWidth
-                value={abonoDays}
-                onChange={(e) => setAbonoDays(Number(e.target.value))}
-                slotProps={{ htmlInput: { min: 1, max: MAX_ABONO_DAYS } }}
-                error={abonoDays > MAX_ABONO_DAYS || excede}
-                helperText={
-                  abonoDays > MAX_ABONO_DAYS
-                    ? `Máximo de ${MAX_ABONO_DAYS} dias`
-                    : excede
-                      ? `Gozo + abono somam ${total} e passam de ${MAX_DAYS_PER_PERIOD}`
-                      : " "
-                }
-              />
-            </Box>
+          {/* Quem já marcou algo precisa ver isso mesmo com o bloco fechado. */}
+          {!painelAberto && (abono || advance13th) && (
+            <Stack direction="row" spacing={0.75} sx={{ mt: 1, flexWrap: "wrap", gap: 0.75 }}>
+              {abono && (
+                <Chip size="small" color="primary" variant="outlined" label={`Abono: ${abonoDays} dia(s)`} />
+              )}
+              {advance13th && (
+                <Chip size="small" color="primary" variant="outlined" label="Antecipa o 13º" />
+              )}
+            </Stack>
           )}
-        </Box>
 
-        <Box>
-          <FormControlLabel
-            control={
-              <Checkbox
-                name="advance13th"
-                checked={advance13th}
-                onChange={(e) => setAdvance13th(e.target.checked)}
-              />
-            }
-            label="Quero antecipar a 1ª parcela do 13º junto com as férias"
-          />
-          <Typography variant="caption" sx={{ display: "block", color: "text.secondary", ml: 4 }}>
-            Precisa ser pedido junto com as férias — depois não dá para incluir
-            nesta folha.
-          </Typography>
+          {/* `unmountOnExit` fica falso de propósito: o checkbox do 13º é
+              lido do FormData pelo nome, e desmontado ele sumiria do envio. */}
+          <Collapse in={painelAberto} unmountOnExit={false} id="mais-opcoes">
+            <Stack spacing={2.5} sx={{ mt: 2 }}>
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={abono}
+                      onChange={(e) => {
+                        setAbono(e.target.checked);
+                        if (!e.target.checked) setAbonoDays(0);
+                        else if (abonoDays === 0) setAbonoDays(10);
+                      }}
+                    />
+                  }
+                  label="Quero converter parte das férias em abono pecuniário"
+                />
+                <Typography variant="caption" sx={{ display: "block", color: "text.secondary", ml: 4 }}>
+                  Art. 143 da CLT: até {MAX_ABONO_DAYS} dias (um terço do período) podem
+                  ser vendidos. Os dias vendidos saem do mesmo saldo do gozo.
+                </Typography>
+
+                {abono && (
+                  <Box sx={{ ml: 4, mt: 1.5, maxWidth: 220 }}>
+                    <TextField
+                      label="Dias de abono"
+                      type="number"
+                      size="small"
+                      fullWidth
+                      value={abonoDays}
+                      onChange={(e) => setAbonoDays(Number(e.target.value))}
+                      slotProps={{ htmlInput: { min: 1, max: MAX_ABONO_DAYS } }}
+                      error={abonoDays > MAX_ABONO_DAYS || excede}
+                      helperText={
+                        abonoDays > MAX_ABONO_DAYS
+                          ? `Máximo de ${MAX_ABONO_DAYS} dias`
+                          : excede
+                            ? `Gozo + abono somam ${total} e passam de ${MAX_DAYS_PER_PERIOD}`
+                            : " "
+                      }
+                    />
+                  </Box>
+                )}
+              </Box>
+
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      name="advance13th"
+                      checked={advance13th}
+                      onChange={(e) => setAdvance13th(e.target.checked)}
+                    />
+                  }
+                  label="Quero antecipar a 1ª parcela do 13º junto com as férias"
+                />
+                <Typography variant="caption" sx={{ display: "block", color: "text.secondary", ml: 4 }}>
+                  Precisa ser pedido junto com as férias — depois não dá para incluir
+                  nesta folha.
+                </Typography>
+              </Box>
+            </Stack>
+          </Collapse>
         </Box>
 
         <TextField

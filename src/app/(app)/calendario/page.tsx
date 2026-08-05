@@ -18,7 +18,9 @@ export default async function CalendarioPage() {
   const { vacations, holidays, birthdays } = await getCalendarData(year);
 
   return (
-    <Stack spacing={3} sx={{ maxWidth: 900 }}>
+    // Mais largo que as outras telas: as faixas de férias precisam de coluna
+    // suficiente para o nome caber sem virar reticências.
+    <Stack spacing={3} sx={{ maxWidth: 1080 }}>
       <Stack spacing={0.5}>
         <Typography variant="h5" sx={{ fontWeight: 600 }}>
           Calendário
