@@ -6,6 +6,8 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 import { requireSession } from "@/lib/dal";
+import { COMPANY_NOTICE_DAYS } from "@/lib/clt";
+import { listTeamVacations } from "@/server/vacations";
 
 import { RequestForm } from "./request-form";
 
@@ -14,6 +16,10 @@ export const metadata: Metadata = { title: "Solicitar férias" };
 export default async function SolicitarPage() {
   // Rota autenticada: nome, e-mail e setor vêm da sessão, não de campo digitável.
   const user = await requireSession();
+
+  // A pessoa vê a programação da equipe ANTES de escolher a data — foi um
+  // pedido explícito do RH, para a escolha já nascer consciente do impacto.
+  const team = await listTeamVacations(user.id);
 
   return (
     <Stack spacing={3} sx={{ maxWidth: 760 }}>
@@ -29,14 +35,15 @@ export default async function SolicitarPage() {
 
       <Alert severity="info">
         A solicitação é analisada na hora: o sistema confere saldo do período
-        aquisitivo, sobreposição com a equipe e as vedações da CLT — inclusive a
-        do art. 134, §3º, que proíbe iniciar férias nos dois dias que antecedem
-        feriado ou o repouso semanal.
+        aquisitivo, abono pecuniário, sobreposição com a equipe e as vedações da
+        CLT — inclusive a do art. 134, §3º, que proíbe iniciar férias nos dois
+        dias que antecedem feriado ou o repouso semanal. A política interna pede{" "}
+        {COMPANY_NOTICE_DAYS} dias de antecedência.
       </Alert>
 
       <Card>
         <CardContent sx={{ p: 3 }}>
-          <RequestForm />
+          <RequestForm team={team} />
         </CardContent>
       </Card>
     </Stack>

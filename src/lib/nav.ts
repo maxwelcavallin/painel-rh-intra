@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
@@ -7,7 +8,9 @@ import {
   Megaphone,
   Plane,
   Send,
+  SlidersHorizontal,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -72,6 +75,13 @@ export const NAV_ITEMS: NavItem[] = [
     section: "Equipe",
   },
   {
+    href: "/ferias/vencimentos",
+    label: "Vencimento de férias",
+    icon: AlertTriangle,
+    roles: MANAGEMENT,
+    section: "Equipe",
+  },
+  {
     href: "/formularios/painel",
     label: "Painel de formulários",
     icon: ClipboardCheck,
@@ -79,6 +89,13 @@ export const NAV_ITEMS: NavItem[] = [
     section: "Equipe",
   },
 
+  {
+    href: "/ferias/controle",
+    label: "Controle de férias",
+    icon: Wallet,
+    roles: RH_ONLY,
+    section: "Administração",
+  },
   {
     href: "/colaboradores",
     label: "Colaboradores",
@@ -90,6 +107,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/avisos",
     label: "Avisos",
     icon: Megaphone,
+    roles: RH_ONLY,
+    section: "Administração",
+  },
+  {
+    href: "/comunicacoes",
+    label: "Comunicações",
+    icon: SlidersHorizontal,
     roles: RH_ONLY,
     section: "Administração",
   },

@@ -17,20 +17,28 @@ import "server-only";
 
 export type ZaiaTemplate =
   | "password_reset"
-  | "vacation_decision"
   | "vacation_request"
-  | "broadcast"
-  | "form_reminder";
+  | "vacation_decision"
+  | "vacation_expiring"
+  | "vacation_receipt"
+  | "vacation_payment"
+  | "form_new"
+  | "form_reminder"
+  | "broadcast";
 
 /** Um webhook por template. Adicionar template novo = adicionar linha aqui. */
 const WEBHOOK_ENV: Record<ZaiaTemplate, string[]> = {
   // O primeiro nome é o oficial; os seguintes são compatibilidade com as
   // variáveis que já existiam antes desta separação.
   password_reset: ["ZAIA_WEBHOOK_PASSWORD_RESET", "ZAIA_PASSWORD_RESET_WEBHOOK_URL"],
-  vacation_decision: ["ZAIA_WEBHOOK_VACATION_DECISION"],
   vacation_request: ["ZAIA_WEBHOOK_VACATION_REQUEST"],
-  broadcast: ["ZAIA_WEBHOOK_BROADCAST"],
+  vacation_decision: ["ZAIA_WEBHOOK_VACATION_DECISION"],
+  vacation_expiring: ["ZAIA_WEBHOOK_VACATION_EXPIRING"],
+  vacation_receipt: ["ZAIA_WEBHOOK_VACATION_RECEIPT"],
+  vacation_payment: ["ZAIA_WEBHOOK_VACATION_PAYMENT"],
+  form_new: ["ZAIA_WEBHOOK_FORM_NEW"],
   form_reminder: ["ZAIA_WEBHOOK_FORM_REMINDER"],
+  broadcast: ["ZAIA_WEBHOOK_BROADCAST"],
 };
 
 export type ZaiaResult =

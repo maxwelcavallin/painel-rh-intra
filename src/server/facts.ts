@@ -10,11 +10,13 @@ import {
   blockedStartWeekdays,
   daysBetweenInclusive,
   formatBR,
+  COMPANY_NOTICE_DAYS,
+  LEGAL_NOTICE_DAYS,
   MAX_DAYS_PER_PERIOD,
   MIN_ANY_FRACTION,
   MIN_LONGEST_FRACTION,
-  MIN_NOTICE_DAYS,
   rangesOverlap,
+  validateAbono,
   toUTC,
   twoDaysAfter,
   WEEKDAY_NAME,
@@ -51,6 +53,7 @@ export type VacationFacts = {
     startDate: string;
     endDate: string;
     days: number;
+    abonoDays: number;
     startWeekday: string;
   };
   employee: {
@@ -101,10 +104,13 @@ export async function buildVacationFacts(params: {
   userId: string;
   startDate: string;
   endDate: string;
+  /** Dias vendidos como abono pecuniário (art. 143). Consomem o mesmo saldo. */
+  abonoDays?: number;
   /** Ignora esta solicitação ao checar sobreposição (usado ao reavaliar). */
   excludeRequestId?: string;
 }): Promise<VacationFacts> {
   const { userId, startDate, endDate } = params;
+  const abonoDays = params.abonoDays ?? 0;
 
   const [employee] = await db
     .select({
@@ -218,17 +224,26 @@ export async function buildVacationFacts(params: {
       )
       .reduce((sum, r) => sum + daysBetweenInclusive(r.startDate, r.endDate), 0);
 
-    const total = daysAlreadyTaken + days;
+    // Abono consome o mesmo saldo do gozo — vender 10 dias e tirar 30 não existe.
+    const total = daysAlreadyTaken + days + abonoDays;
     daysRemainingAfter = MAX_DAYS_PER_PERIOD - total;
     exceedsAnnualLimit = total > MAX_DAYS_PER_PERIOD;
 
     if (exceedsAnnualLimit) {
       conflicts.push(
-        `O total de ${total} dias excede o limite de ${MAX_DAYS_PER_PERIOD} dias do período aquisitivo ` +
+        `O total de ${total} dias${abonoDays > 0 ? ` (${days} de gozo + ${abonoDays} de abono)` : ""} ` +
+          `excede o limite de ${MAX_DAYS_PER_PERIOD} dias do período aquisitivo ` +
           `(${formatBR(acquisitivePeriod.start)} a ${formatBR(acquisitivePeriod.end)}). ` +
           `Já usufruídos: ${daysAlreadyTaken} dias. Art. 130 da CLT.`,
       );
     }
+
+    const abonoProblem = validateAbono({
+      vacationDays: days,
+      abonoDays,
+      daysAlreadyTaken,
+    });
+    if (abonoProblem && !exceedsAnnualLimit) conflicts.push(abonoProblem);
   }
 
   /* --- Art. 134 §3º: feriado e DSR -------------------------------- */
@@ -290,10 +305,20 @@ export async function buildVacationFacts(params: {
   /* --- Art. 135: antecedência ------------------------------------- */
 
   const noticeDays = daysBetweenInclusive(today, startDate) - 1;
-  const insufficientNotice = noticeDays < MIN_NOTICE_DAYS && !startsInThePast;
+  const insufficientNotice =
+    noticeDays < COMPANY_NOTICE_DAYS && !startsInThePast;
+
   if (insufficientNotice) {
+    // Dois patamares distintos: a lei manda 30, a política da 01 Tecnologia
+    // pede 40 porque o repasse à Senior sai em lote (dias 10 e 20) e a folha
+    // precisa fechar antes. Abaixo de 30 o problema deixa de ser interno.
     warnings.push(
-      `Antecedência de ${noticeDays} dia(s). O art. 135 da CLT prevê comunicação com ${MIN_NOTICE_DAYS} dias de antecedência.`,
+      noticeDays < LEGAL_NOTICE_DAYS
+        ? `Antecedência de apenas ${noticeDays} dia(s) — abaixo dos ${LEGAL_NOTICE_DAYS} ` +
+          `dias do art. 135 da CLT e dos ${COMPANY_NOTICE_DAYS} dias exigidos pela política interna. ` +
+          `Compromete o prazo de pagamento e o repasse à folha.`
+        : `Antecedência de ${noticeDays} dia(s). A política interna pede ` +
+          `${COMPANY_NOTICE_DAYS} dias para garantir o fechamento da folha e o repasse à Senior.`,
     );
   }
 
@@ -351,6 +376,7 @@ export async function buildVacationFacts(params: {
       startDate,
       endDate,
       days,
+      abonoDays,
       startWeekday: WEEKDAY_NAME[startWeekday],
     },
     employee: {

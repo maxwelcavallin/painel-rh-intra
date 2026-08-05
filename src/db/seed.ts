@@ -9,7 +9,12 @@ import bcrypt from "bcryptjs";
 import { isValidCpf } from "../lib/format";
 
 import * as schema from "./schema";
-import { users, vacationRequests, notifications } from "./schema";
+import {
+  notificationSettings,
+  notifications,
+  users,
+  vacationRequests,
+} from "./schema";
 
 /**
  * Seed 100% FICTÍCIO — é um dos checkboxes da ficha de entrega.
@@ -291,6 +296,36 @@ async function main() {
       },
     ])
     .returning({ id: users.id, name: users.name });
+
+  console.log("Configurando a central de comunicações…");
+  /**
+   * Padrão da demonstração: WhatsApp LIGADO em tudo.
+   *
+   * Decisão de produto — nesta entrega o WhatsApp faz o papel do e-mail, que
+   * fica para uma versão futura. Discord e e-mail ficam desligados porque ainda
+   * não entregam (DM exige bot; e-mail não está implementado), e ligá-los daria
+   * a falsa impressão de que a mensagem saiu.
+   */
+  const tipos = [
+    "password_reset",
+    "vacation_request",
+    "vacation_decision",
+    "vacation_expiring",
+    "vacation_receipt",
+    "vacation_payment",
+    "form_new",
+    "form_reminder",
+  ] as const;
+
+  await db.delete(notificationSettings);
+  await db.insert(notificationSettings).values(
+    tipos.flatMap((tipo) => [
+      { type: tipo, channel: "whatsapp" as const, enabled: true, updatedBy: rh.id },
+      { type: tipo, channel: "discord" as const, enabled: false, updatedBy: rh.id },
+      { type: tipo, channel: "email" as const, enabled: false, updatedBy: rh.id },
+    ]),
+  );
+  console.log(`✔ ${tipos.length} tipos × 3 canais configurados (WhatsApp ligado).`);
 
   // Auto-verificação: o formulário de cadastro valida o dígito verificador do
   // CPF, então um seed com CPF mal formado deixa o próprio registro impossível

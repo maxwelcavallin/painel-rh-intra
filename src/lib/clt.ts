@@ -21,8 +21,36 @@ export const MAX_DAYS_PER_PERIOD = 30;
 export const MIN_LONGEST_FRACTION = 14;
 export const MIN_ANY_FRACTION = 5;
 
-/** Art. 135: comunicação ao empregado com 30 dias de antecedência. */
-export const MIN_NOTICE_DAYS = 30;
+/** Art. 135 CLT: comunicação ao empregado com 30 dias de antecedência. */
+export const LEGAL_NOTICE_DAYS = 30;
+
+/**
+ * Política da 01 Tecnologia: 40 dias, mais rígida que a CLT.
+ *
+ * Existe porque o repasse à Senior sai em lote nos dias 10 e 20, e a folha
+ * precisa fechar antes. Os 30 dias legais não dão essa folga.
+ * Confirmado pelo RH em 04/08/2026.
+ */
+export const COMPANY_NOTICE_DAYS = 40;
+
+/**
+ * Art. 143 CLT: o empregado pode converter até 1/3 das férias em dinheiro.
+ * Sobre os 30 dias do período, o teto é 10.
+ */
+export const MAX_ABONO_DAYS = 10;
+
+/**
+ * Art. 145 CLT: o pagamento é devido até 2 dias ANTES do início das férias.
+ * É aqui que a multa mora — não na aprovação.
+ */
+export const PAYMENT_DAYS_BEFORE = 2;
+
+/**
+ * Art. 134: as férias devem ser concedidas nos 12 meses SEGUINTES ao fim do
+ * período aquisitivo (período concessivo). Passou disso, art. 137: pagamento
+ * em dobro.
+ */
+export const CONCESSIVE_MONTHS = 12;
 
 /** Dia de repouso semanal remunerado. 0 = domingo. */
 export const WEEKLY_REST_DAY = 0;
@@ -190,4 +218,130 @@ export function easterSunday(year: number): Date {
 
 export function addDaysToDate(base: Date, days: number): string {
   return toISO(new Date(base.getTime() + days * 86_400_000));
+}
+
+/* ------------------------------------------------------------------ */
+/* Dias úteis e prazo de pagamento (art. 145)                          */
+/* ------------------------------------------------------------------ */
+
+export function isBusinessDay(isoDate: string, holidays: Set<string>): boolean {
+  const weekday = weekdayOf(isoDate);
+  if (weekday === 0 || weekday === 6) return false;
+  return !holidays.has(isoDate);
+}
+
+/**
+ * Recua `count` dias ÚTEIS a partir de `isoDate`, pulando fim de semana e feriado.
+ *
+ * Usado para achar a data-limite de pagamento das férias. Contar em dias
+ * corridos daria uma data que cai num sábado ou feriado — e o dinheiro não
+ * entra na conta em dia não útil, que é exatamente como a multa acontece.
+ */
+export function subtractBusinessDays(
+  isoDate: string,
+  count: number,
+  holidays: Set<string> = new Set(),
+): string {
+  let cursor = isoDate;
+  let remaining = count;
+
+  // Teto de segurança: 60 iterações cobrem qualquer emenda de feriado real.
+  for (let guard = 0; guard < 60 && remaining > 0; guard++) {
+    cursor = addDays(cursor, -1);
+    if (isBusinessDay(cursor, holidays)) remaining--;
+  }
+
+  return cursor;
+}
+
+/** Data-limite para o pagamento das férias começadas em `startISO`. */
+export function paymentDeadline(
+  startISO: string,
+  holidays: Set<string> = new Set(),
+): string {
+  return subtractBusinessDays(startISO, PAYMENT_DAYS_BEFORE, holidays);
+}
+
+/* ------------------------------------------------------------------ */
+/* Abono pecuniário (art. 143)                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Valida o abono contra o saldo do período.
+ *
+ * Duas regras somadas: o abono não passa de 1/3 (10 dias), e gozo + abono não
+ * podem ultrapassar os 30 dias do período aquisitivo.
+ */
+export function validateAbono(params: {
+  vacationDays: number;
+  abonoDays: number;
+  daysAlreadyTaken: number;
+}): string | null {
+  const { vacationDays, abonoDays, daysAlreadyTaken } = params;
+
+  if (abonoDays <= 0) return null;
+  if (!Number.isInteger(abonoDays)) return "Os dias de abono precisam ser inteiros.";
+
+  if (abonoDays > MAX_ABONO_DAYS) {
+    return `O abono pecuniário é limitado a ${MAX_ABONO_DAYS} dias — um terço do período (art. 143 da CLT).`;
+  }
+
+  const total = daysAlreadyTaken + vacationDays + abonoDays;
+  if (total > MAX_DAYS_PER_PERIOD) {
+    return (
+      `Gozo mais abono somam ${total} dias e ultrapassam os ${MAX_DAYS_PER_PERIOD} ` +
+      `do período aquisitivo. Já usufruídos: ${daysAlreadyTaken}.`
+    );
+  }
+
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Período concessivo e vencimento (arts. 134 e 137)                   */
+/* ------------------------------------------------------------------ */
+
+export type VacationDeadline = {
+  acquisitive: AcquisitivePeriod;
+  /** Último dia para CONCEDER sem pagar em dobro. */
+  concessiveEnd: string;
+  /** Dias restantes até esse limite. Negativo = já venceu. */
+  daysUntilDeadline: number;
+  expired: boolean;
+};
+
+/**
+ * Prazo real que interessa ao RH: não é quando o direito nasce, é quando ele
+ * VENCE. O período concessivo são os 12 meses seguintes ao fim do aquisitivo;
+ * passar disso obriga a pagar em dobro (art. 137).
+ */
+export function vacationDeadlineFor(
+  admissionISO: string,
+  todayISO: string,
+): VacationDeadline {
+  const acquisitive = acquisitivePeriodFor(admissionISO, todayISO);
+
+  // O período aquisitivo que está VENCENDO é o anterior ao corrente: ele
+  // fechou e agora corre o prazo de concessão.
+  const closed = acquisitivePeriodFor(admissionISO, addDays(acquisitive.start, -1));
+
+  const end = toUTC(closed.end);
+  const concessiveEnd = toISO(
+    new Date(
+      Date.UTC(
+        end.getUTCFullYear() + 1,
+        end.getUTCMonth(),
+        end.getUTCDate(),
+      ),
+    ),
+  );
+
+  const daysUntilDeadline = daysBetweenInclusive(todayISO, concessiveEnd) - 1;
+
+  return {
+    acquisitive: closed,
+    concessiveEnd,
+    daysUntilDeadline,
+    expired: daysUntilDeadline < 0,
+  };
 }

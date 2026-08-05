@@ -1,6 +1,6 @@
 import Chip from "@mui/material/Chip";
 
-import { statusColor, statusLabel } from "@/lib/brand";
+import { statusColor, statusLabel, type VacationStatus } from "@/lib/brand";
 
 /**
  * Chip de status. Sempre pelo mapa `statusColor` do DS — nunca cor "livre".
@@ -10,7 +10,7 @@ export function StatusChip({
   status,
   size = "small",
 }: {
-  status: "pending" | "approved" | "rejected";
+  status: VacationStatus;
   size?: "small" | "medium";
 }) {
   return (

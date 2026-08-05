@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { passwordResetCodes, users } from "@/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/password";
 
+import { isEnabled } from "./notifications";
 import { normalizePhone, sendPasswordResetCode } from "./zaia";
 
 const CODE_TTL_MINUTES = 15;
@@ -85,6 +86,16 @@ export async function requestPasswordReset(rawEmail: string): Promise<void> {
   await db
     .insert(passwordResetCodes)
     .values({ userId: user.id, codeHash, expiresAt });
+
+  // Respeita a matriz de comunicações, mas NÃO passa pelo `notify()` genérico:
+  // aquele cria notificação in-app, e o código de recuperação não pode ficar
+  // registrado dentro do sistema — quem precisa dele nem consegue entrar.
+  if (!(await isEnabled("password_reset", "whatsapp"))) {
+    console.warn(
+      "[password-reset] canal WhatsApp desligado para este tipo; código não enviado.",
+    );
+    return;
+  }
 
   const result = await sendPasswordResetCode({
     phone,

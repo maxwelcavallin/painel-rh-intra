@@ -1,21 +1,18 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/db";
 import { users, vacationRequests } from "@/db/schema";
 import type { Role } from "@/db/schema";
+import { paymentDeadline } from "@/lib/clt";
 
 import { judgeVacationRequest } from "./agent";
 import { buildVacationFacts, daysBetweenInclusive, formatBR } from "./facts";
-import {
-  approversFor,
-  notifyInApp,
-  notifyManagerPrivately,
-  notifyWhatsApp,
-} from "./notify";
+import { getHolidaysForRange } from "./holidays";
+import { notify } from "./notifications";
 
-export type Decision = "pending" | "approved" | "rejected";
+export type Decision = "pending" | "approved" | "rejected" | "cancelled";
 
 /**
  * Status consolidado. Derivado, nunca escrito à mão em dois lugares.
@@ -35,6 +32,16 @@ function consolidate(params: {
   return "approved";
 }
 
+/** Data-limite de pagamento (art. 145), descontando fim de semana e feriado. */
+async function computePaymentDue(startDate: string): Promise<string> {
+  const holidays = await getHolidaysForRange(
+    // Janela folgada para trás: emenda de feriado pode empurrar vários dias.
+    startDate,
+    startDate,
+  );
+  return paymentDeadline(startDate, new Set(holidays.map((h) => h.date)));
+}
+
 /* ------------------------------------------------------------------ */
 /* Criação                                                             */
 /* ------------------------------------------------------------------ */
@@ -47,9 +54,11 @@ export async function createVacationRequest(params: {
   userId: string;
   startDate: string;
   endDate: string;
+  abonoDays: number;
+  advance13th: boolean;
   notes: string | null;
 }): Promise<CreateResult> {
-  const { userId, startDate, endDate, notes } = params;
+  const { userId, startDate, endDate, abonoDays, advance13th, notes } = params;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
     return { ok: false, error: "Datas inválidas." };
@@ -57,8 +66,11 @@ export async function createVacationRequest(params: {
   if (endDate < startDate) {
     return { ok: false, error: "A data de término é anterior à de início." };
   }
+  if (!Number.isInteger(abonoDays) || abonoDays < 0) {
+    return { ok: false, error: "Dias de abono inválidos." };
+  }
 
-  const facts = await buildVacationFacts({ userId, startDate, endDate });
+  const facts = await buildVacationFacts({ userId, startDate, endDate, abonoDays });
   const verdict = await judgeVacationRequest(facts, notes);
 
   // Bloqueio legal decide sozinho. Recomendação de aprovar/revisar ainda
@@ -72,6 +84,9 @@ export async function createVacationRequest(params: {
       startDate,
       endDate,
       days: daysBetweenInclusive(startDate, endDate),
+      abonoPecuniario: abonoDays > 0,
+      abonoDays,
+      advance13th,
       notes: notes?.trim() || null,
       status,
       aiRecommendation: verdict.recommendation,
@@ -83,29 +98,24 @@ export async function createVacationRequest(params: {
     .returning({ id: vacationRequests.id });
 
   const period = `${formatBR(startDate)} a ${formatBR(endDate)}`;
+  const extras = [
+    abonoDays > 0 ? `${abonoDays} dia(s) de abono pecuniário` : null,
+    advance13th ? "com antecipação do 13º" : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
-  // Notificações são efeito colateral: nunca desfazem a solicitação já gravada.
   if (status === "rejected") {
-    await notifyWhatsApp({
+    await notify({
+      type: "vacation_decision",
       userId,
-      template: "vacation_decision",
+      title: "Solicitação de férias reprovada",
       message:
         `Sua solicitação de férias (${period}) foi reprovada automaticamente. ` +
         `${verdict.reasoning} Fale com o RH se precisar de ajuda para reagendar.`,
+      link: "/ferias/minhas",
     });
   } else {
-    // Nada de webhook aqui: ele publica num canal geral, e solicitação de férias
-    // é nominal — assunto entre a pessoa, o gestor dela e o RH. O webhook fica
-    // reservado aos avisos gerais do RH (Fase 3).
-    const approvers = await approversFor(userId);
-    await notifyInApp({
-      userIds: approvers,
-      title: "Nova solicitação de férias",
-      body: `${facts.employee.name} solicitou férias de ${period} (${facts.request.days} dias). Recomendação da IA: ${verdict.recommendation}.`,
-      link: "/aprovacoes",
-    });
-
-    // O gestor direto também recebe no privado, para não depender de abrir a intranet.
     const [employee] = await db
       .select({ managerId: users.managerId })
       .from(users)
@@ -113,14 +123,31 @@ export async function createVacationRequest(params: {
       .limit(1);
 
     if (employee?.managerId) {
-      await notifyManagerPrivately({
-        managerId: employee.managerId,
-        template: "vacation_request",
+      await notify({
+        type: "vacation_request",
+        userId: employee.managerId,
+        title: "Nova solicitação de férias",
         message:
           `${facts.employee.name} solicitou férias de ${period} ` +
-          `(${facts.request.days} dias corridos). Recomendação da análise automática: ` +
-          `${verdict.recommendation}. ${verdict.reasoning} ` +
-          `Aprove ou reprove em /aprovacoes na Intranet RH.`,
+          `(${facts.request.days} dias corridos${extras ? `, ${extras}` : ""}). ` +
+          `Análise automática: ${verdict.recommendation}. ${verdict.reasoning}`,
+        link: "/aprovacoes",
+      });
+    }
+
+    // RH acompanha pelo painel, sem receber uma mensagem por solicitação.
+    const rhUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
+
+    for (const rh of rhUsers) {
+      await notify({
+        type: "vacation_request",
+        userId: rh.id,
+        title: "Nova solicitação de férias",
+        message: `${facts.employee.name} — ${period} (${facts.request.days} dias${extras ? `, ${extras}` : ""}).`,
+        link: "/aprovacoes",
       });
     }
   }
@@ -157,6 +184,10 @@ export async function decideVacationRequest(params: {
 
   const { request } = row;
 
+  if (request.cancelledAt) {
+    return { ok: false, error: "Esta solicitação foi cancelada." };
+  }
+
   // Autorização checada aqui de novo, junto do dado — nunca só na UI.
   const isRH = decider.role === "admin";
   const isTheirManager =
@@ -184,12 +215,19 @@ export async function decideVacationRequest(params: {
 
   const status = consolidate({ rhApproval, managerApproval, hasManager });
 
+  // Ao aprovar, o prazo de pagamento passa a existir — é o relógio da multa.
+  const paymentDueDate =
+    status === "approved" && !request.paymentDueDate
+      ? await computePaymentDue(request.startDate)
+      : request.paymentDueDate;
+
   await db
     .update(vacationRequests)
     .set({
       rhApproval,
       managerApproval,
       status,
+      paymentDueDate,
       updatedAt: now,
       ...(isRH
         ? { rhApprovedBy: decider.id, rhApprovedAt: now, rhNote: note }
@@ -200,23 +238,189 @@ export async function decideVacationRequest(params: {
   const period = `${formatBR(request.startDate)} a ${formatBR(request.endDate)}`;
 
   if (status === "approved") {
-    await notifyWhatsApp({
+    await notify({
+      type: "vacation_decision",
       userId: request.userId,
-      template: "vacation_decision",
-      message: `Boa notícia! Suas férias de ${period} foram aprovadas. Bom descanso!`,
+      title: "Férias aprovadas",
+      message:
+        `Boa notícia! Suas férias de ${period} foram aprovadas. ` +
+        `O pagamento é devido até ${formatBR(paymentDueDate!)} e o recibo precisa ` +
+        `ser assinado antes do início. Bom descanso!`,
+      link: "/ferias/minhas",
     });
   } else if (status === "rejected") {
-    await notifyWhatsApp({
+    await notify({
+      type: "vacation_decision",
       userId: request.userId,
-      template: "vacation_decision",
+      title: "Solicitação de férias reprovada",
       message:
         `Sua solicitação de férias (${period}) foi reprovada.` +
         (note ? ` Motivo: ${note}` : "") +
         " Fale com o RH para combinar novas datas.",
+      link: "/ferias/minhas",
     });
   }
 
   return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/* Cancelamento / remanejamento                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Cancela uma solicitação. Remanejar é cancelar e abrir outra — assim o
+ * histórico de quem pediu o quê e quando não some, o que importa para a
+ * prestação de contas.
+ *
+ * Colaborador cancela a própria; RH cancela qualquer uma.
+ */
+export async function cancelVacationRequest(params: {
+  requestId: string;
+  actor: { id: string; role: Role };
+  reason: string | null;
+}): Promise<DecideResult> {
+  const [row] = await db
+    .select({
+      request: vacationRequests,
+      employeeName: users.name,
+    })
+    .from(vacationRequests)
+    .innerJoin(users, eq(users.id, vacationRequests.userId))
+    .where(eq(vacationRequests.id, params.requestId))
+    .limit(1);
+
+  if (!row) return { ok: false, error: "Solicitação não encontrada." };
+  if (row.request.cancelledAt) {
+    return { ok: false, error: "Esta solicitação já está cancelada." };
+  }
+
+  const isRH = params.actor.role === "admin";
+  const isOwner = row.request.userId === params.actor.id;
+  if (!isRH && !isOwner) {
+    return { ok: false, error: "Você não pode cancelar esta solicitação." };
+  }
+
+  // Depois de pago, cancelar deixa de ser operação de tela: envolve estorno.
+  if (row.request.paidAt && !isRH) {
+    return {
+      ok: false,
+      error: "Estas férias já foram pagas. Só o RH pode cancelar.",
+    };
+  }
+
+  const now = new Date();
+  await db
+    .update(vacationRequests)
+    .set({
+      status: "cancelled",
+      cancelledAt: now,
+      cancelledBy: params.actor.id,
+      cancelReason: params.reason?.trim() || null,
+      updatedAt: now,
+    })
+    .where(eq(vacationRequests.id, params.requestId));
+
+  const period = `${formatBR(row.request.startDate)} a ${formatBR(row.request.endDate)}`;
+
+  // Quem não cancelou precisa saber.
+  if (!isOwner) {
+    await notify({
+      type: "vacation_decision",
+      userId: row.request.userId,
+      title: "Férias canceladas",
+      message:
+        `Suas férias de ${period} foram canceladas pelo RH.` +
+        (params.reason ? ` Motivo: ${params.reason}` : "") +
+        " Procure o RH para remarcar.",
+      link: "/ferias/minhas",
+    });
+  } else {
+    const rhUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
+
+    for (const rh of rhUsers) {
+      await notify({
+        type: "vacation_decision",
+        userId: rh.id,
+        title: "Férias canceladas pelo colaborador",
+        message:
+          `${row.employeeName} cancelou as férias de ${period}.` +
+          (params.reason ? ` Motivo: ${params.reason}` : ""),
+        link: "/aprovacoes",
+      });
+    }
+  }
+
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/* Recibo e pagamento — onde a multa acontece                          */
+/* ------------------------------------------------------------------ */
+
+export async function registerReceiptSigned(params: {
+  requestId: string;
+  rhId: string;
+}): Promise<DecideResult> {
+  const [request] = await db
+    .select()
+    .from(vacationRequests)
+    .where(eq(vacationRequests.id, params.requestId))
+    .limit(1);
+
+  if (!request) return { ok: false, error: "Solicitação não encontrada." };
+  if (request.status !== "approved") {
+    return { ok: false, error: "Só férias aprovadas têm recibo." };
+  }
+
+  await db
+    .update(vacationRequests)
+    .set({
+      receiptSignedAt: new Date(),
+      receiptRegisteredBy: params.rhId,
+      updatedAt: new Date(),
+    })
+    .where(eq(vacationRequests.id, params.requestId));
+
+  return { ok: true };
+}
+
+export async function registerPayment(params: {
+  requestId: string;
+  rhId: string;
+}): Promise<DecideResult> {
+  const [request] = await db
+    .select()
+    .from(vacationRequests)
+    .where(eq(vacationRequests.id, params.requestId))
+    .limit(1);
+
+  if (!request) return { ok: false, error: "Solicitação não encontrada." };
+  if (request.status !== "approved") {
+    return { ok: false, error: "Só férias aprovadas têm pagamento." };
+  }
+
+  await db
+    .update(vacationRequests)
+    .set({ paidAt: new Date(), paidBy: params.rhId, updatedAt: new Date() })
+    .where(eq(vacationRequests.id, params.requestId));
+
+  return { ok: true };
+}
+
+/** Marca um lote como repassado à Senior (dias 10 e 20). */
+export async function markReportedToSenior(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const now = new Date();
+  for (const id of ids) {
+    await db
+      .update(vacationRequests)
+      .set({ reportedToSeniorAt: now })
+      .where(eq(vacationRequests.id, id));
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -253,6 +457,8 @@ export async function listPendingForApprover(approver: { id: string; role: Role 
       startDate: vacationRequests.startDate,
       endDate: vacationRequests.endDate,
       days: vacationRequests.days,
+      abonoDays: vacationRequests.abonoDays,
+      advance13th: vacationRequests.advance13th,
       notes: vacationRequests.notes,
       status: vacationRequests.status,
       rhApproval: vacationRequests.rhApproval,
@@ -265,11 +471,11 @@ export async function listPendingForApprover(approver: { id: string; role: Role 
     })
     .from(vacationRequests)
     .innerJoin(users, eq(users.id, vacationRequests.userId))
-    .where(scope)
+    .where(and(scope, isNull(vacationRequests.cancelledAt)))
     .orderBy(desc(vacationRequests.createdAt));
 }
 
-/** Férias aprovadas — visível a qualquer colaborador logado (Fase 5). */
+/** Férias aprovadas — visível a qualquer colaborador logado. */
 export async function listApprovedVacations() {
   return db
     .select({
@@ -283,5 +489,72 @@ export async function listApprovedVacations() {
     .from(vacationRequests)
     .innerJoin(users, eq(users.id, vacationRequests.userId))
     .where(eq(vacationRequests.status, "approved"))
+    .orderBy(vacationRequests.startDate);
+}
+
+/** Férias da equipe da pessoa, para ela ver ANTES de escolher a data. */
+export async function listTeamVacations(userId: string) {
+  const [me] = await db
+    .select({ managerId: users.managerId, sector: users.sector })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const scope = me?.managerId
+    ? eq(users.managerId, me.managerId)
+    : me?.sector
+      ? eq(users.sector, me.sector)
+      : null;
+
+  if (!scope) return [];
+
+  return db
+    .select({
+      id: vacationRequests.id,
+      name: users.name,
+      startDate: vacationRequests.startDate,
+      endDate: vacationRequests.endDate,
+      days: vacationRequests.days,
+      status: vacationRequests.status,
+    })
+    .from(vacationRequests)
+    .innerJoin(users, eq(users.id, vacationRequests.userId))
+    .where(
+      and(
+        scope,
+        ne(vacationRequests.userId, userId),
+        isNull(vacationRequests.cancelledAt),
+        ne(vacationRequests.status, "rejected"),
+      ),
+    )
+    .orderBy(vacationRequests.startDate);
+}
+
+/** Controle operacional do RH: recibo e pagamento das férias aprovadas. */
+export async function listOperationalControl() {
+  return db
+    .select({
+      id: vacationRequests.id,
+      employeeName: users.name,
+      employeeCpf: users.cpf,
+      startDate: vacationRequests.startDate,
+      endDate: vacationRequests.endDate,
+      days: vacationRequests.days,
+      abonoDays: vacationRequests.abonoDays,
+      advance13th: vacationRequests.advance13th,
+      paymentDueDate: vacationRequests.paymentDueDate,
+      paidAt: vacationRequests.paidAt,
+      receiptSignedAt: vacationRequests.receiptSignedAt,
+      reportedToSeniorAt: vacationRequests.reportedToSeniorAt,
+    })
+    .from(vacationRequests)
+    .innerJoin(users, eq(users.id, vacationRequests.userId))
+    .where(
+      and(
+        eq(vacationRequests.status, "approved"),
+        isNull(vacationRequests.cancelledAt),
+        isNotNull(vacationRequests.paymentDueDate),
+      ),
+    )
     .orderBy(vacationRequests.startDate);
 }

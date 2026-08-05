@@ -28,13 +28,18 @@ export const statusColor = {
   pending: "warning",
   approved: "success",
   rejected: "error",
+  // Cancelada não é falha nem sucesso — é saída neutra do fluxo.
+  cancelled: "default",
 } as const;
 
 export const statusLabel = {
   pending: "Pendente",
   approved: "Aprovada",
   rejected: "Reprovada",
+  cancelled: "Cancelada",
 } as const;
+
+export type VacationStatus = keyof typeof statusLabel;
 
 /**
  * Família tipográfica com fallback DENTRO do `var()`.

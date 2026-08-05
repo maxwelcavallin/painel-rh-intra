@@ -19,6 +19,41 @@ export type DiscordResult =
   | { ok: false; skipped: true; reason: string }
   | { ok: false; skipped: false; error: string };
 
+/**
+ * Mensagem privada — o canal existe na matriz de comunicações, mas ainda não
+ * entrega. Webhook não faz DM: seria preciso um bot com token próprio, no mesmo
+ * servidor das pessoas, e o ID numérico de cada uma (`users.discordUserId`).
+ *
+ * Devolve `skipped` com o motivo em vez de fingir sucesso, para o RH ver na
+ * tela por que a mensagem não saiu.
+ */
+export async function sendDiscordDirect(params: {
+  discordUserId: string | null;
+  title: string;
+  body: string;
+}): Promise<DiscordResult> {
+  if (!process.env.DISCORD_BOT_TOKEN) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "DM no Discord exige bot — está no roadmap pós-entrega",
+    };
+  }
+  if (!params.discordUserId) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "colaborador sem ID numérico do Discord no cadastro",
+    };
+  }
+  // Quando o bot existir, a implementação entra aqui (abrir DM + postar).
+  return {
+    ok: false,
+    skipped: true,
+    reason: "envio de DM ainda não implementado",
+  };
+}
+
 export async function sendDiscordWebhook(params: {
   title: string;
   body: string;

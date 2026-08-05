@@ -3,11 +3,11 @@ import "server-only";
 import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { db } from "@/db";
-import { formResponses, forms, notifications, users } from "@/db/schema";
+import { formResponses, forms, users } from "@/db/schema";
 import type { FormQuestion, Role } from "@/db/schema";
 
 import { resolveAudience, type Audience } from "./audience";
-import { normalizePhone, sendZaia } from "./zaia";
+import { notify, notifyMany } from "./notifications";
 
 /**
  * Formulários com confirmação de resposta.
@@ -80,14 +80,14 @@ export async function createForm(params: {
     })
     .returning({ id: forms.id });
 
-  await db.insert(notifications).values(
-    recipients.map((r) => ({
-      userId: r.id,
-      title: `Novo formulário: ${title}`,
-      body: params.description?.trim() || "Sua resposta é necessária.",
-      link: `/formularios/${created.id}`,
-    })),
-  );
+  // Passa pela central: o RH decide se este tipo sai também por WhatsApp.
+  await notifyMany({
+    type: "form_new",
+    userIds: recipients.map((r) => r.id),
+    title: `Novo formulário: ${title}`,
+    message: params.description?.trim() || `Responda o formulário "${title}".`,
+    link: `/formularios/${created.id}`,
+  });
 
   return { ok: true, id: created.id, recipients: recipients.length };
 }
@@ -338,7 +338,7 @@ export async function sendPendingReminders(): Promise<ReminderReport> {
 
     for (const [managerId, pendingNames] of byManager) {
       const [manager] = await db
-        .select({ name: users.name, phone: users.phone })
+        .select({ name: users.name })
         .from(users)
         .where(eq(users.id, managerId))
         .limit(1);
@@ -348,26 +348,16 @@ export async function sendPendingReminders(): Promise<ReminderReport> {
         `Lembrete: ${pendingNames.length} pessoa(s) da sua equipe ainda não ` +
         `responderam o formulário "${form.title}":\n` +
         pendingNames.map((n) => `• ${n}`).join("\n") +
-        `\n\nAcompanhe em /formularios/painel na Intranet RH.`;
+        `\n\nAcompanhe em Painel de formulários na Intranet RH.`;
 
-      await db.insert(notifications).values({
+      const outcome = await notify({
+        type: "form_reminder",
         userId: managerId,
         title: `Pendências no formulário "${form.title}"`,
-        body: `${pendingNames.length} pessoa(s) da sua equipe ainda não responderam.`,
+        message,
         link: "/formularios/painel",
       });
-
-      const phone = normalizePhone(manager.phone);
-      let sent = false;
-      if (phone) {
-        const result = await sendZaia({
-          template: "form_reminder",
-          phone,
-          name: manager.name.split(" ")[0],
-          message,
-        });
-        sent = result.ok;
-      }
+      const sent = outcome.channels.some((c) => c.status === "sent");
 
       report.managersNotified++;
       report.details.push({

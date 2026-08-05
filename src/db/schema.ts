@@ -19,10 +19,32 @@ import {
 /** `admin` é o admin master (RH). Não há 4º nível de permissão. */
 export const roleEnum = pgEnum("role", ["user", "gestor", "admin"]);
 
+/**
+ * `cancelled` só é usado em `vacationRequests.status` — nunca em `rhApproval`
+ * ou `managerApproval`, que continuam sendo o voto de cada parte.
+ * Remanejamento é cancelar e abrir nova solicitação, para o histórico não sumir.
+ */
 export const decisionEnum = pgEnum("decision", [
   "pending",
   "approved",
   "rejected",
+  "cancelled",
+]);
+
+/**
+ * Tipos de comunicação INDIVIDUAL. O RH liga/desliga cada um por canal na
+ * tela de Comunicações. Aviso em grupo (broadcast) tem fluxo próprio e não
+ * entra aqui.
+ */
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "password_reset",
+  "vacation_request",
+  "vacation_decision",
+  "vacation_expiring",
+  "vacation_receipt",
+  "vacation_payment",
+  "form_new",
+  "form_reminder",
 ]);
 
 /** O que a IA recomendou. `review` = não decidiu sozinha, precisa de humano. */
@@ -186,6 +208,33 @@ export const vacationRequests = pgTable(
     days: integer("days").notNull(),
     notes: text("notes"),
 
+    // --- Opções que hoje vão no e-mail e precisam vir no formulário ---
+    /** Art. 143 CLT: converter até 1/3 das férias em dinheiro. */
+    abonoPecuniario: boolean("abono_pecuniario").notNull().default(false),
+    abonoDays: integer("abono_days").notNull().default(0),
+    /** Antecipação da 1ª parcela do 13º junto com as férias (art. 2º, Lei 4.749). */
+    advance13th: boolean("advance_13th").notNull().default(false),
+
+    // --- Onde a multa realmente acontece ---
+    /**
+     * Pagamento é devido até 2 dias ANTES do início (art. 145 CLT).
+     * Calculado na aprovação, descontando fim de semana e feriado.
+     */
+    paymentDueDate: date("payment_due_date", { mode: "string" }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    paidBy: uuid("paid_by"),
+    /** Recibo de férias assinado — sem ele a empresa fica exposta. */
+    receiptSignedAt: timestamp("receipt_signed_at", { withTimezone: true }),
+    receiptRegisteredBy: uuid("receipt_registered_by"),
+
+    // --- Repasse à Senior (lotes dos dias 10 e 20) ---
+    reportedToSeniorAt: timestamp("reported_to_senior_at", { withTimezone: true }),
+
+    // --- Cancelamento / remanejamento ---
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelledBy: uuid("cancelled_by"),
+    cancelReason: text("cancel_reason"),
+
     /** Status consolidado, derivado das duas aprovações. */
     status: decisionEnum("status").notNull().default("pending"),
 
@@ -245,6 +294,34 @@ export const notifications = pgTable(
       .defaultNow(),
   },
   (t) => [index("notifications_user_idx").on(t.userId, t.readAt)],
+);
+
+/* ------------------------------------------------------------------ */
+/* notificationSettings — a "central de comunicações" do RH            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Matriz tipo × canal, ligada/desligada pelo admin master.
+ *
+ * A notificação DENTRO da intranet não entra aqui: ela é sempre criada, porque
+ * é o próprio sistema e não depende de serviço externo. O que se liga e desliga
+ * são os canais que saem da plataforma.
+ *
+ * Uma linha ausente significa desligado — o padrão é não incomodar ninguém.
+ */
+export const notificationSettings = pgTable(
+  "notification_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: notificationTypeEnum("type").notNull(),
+    channel: channelEnum("channel").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("notification_settings_unique").on(t.type, t.channel)],
 );
 
 /* ------------------------------------------------------------------ */
@@ -354,3 +431,6 @@ export type Broadcast = typeof broadcasts.$inferSelect;
 export type Form = typeof forms.$inferSelect;
 export type FormResponse = typeof formResponses.$inferSelect;
 export type Role = (typeof roleEnum.enumValues)[number];
+export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
+export type Channel = (typeof channelEnum.enumValues)[number];
+export type NotificationSetting = typeof notificationSettings.$inferSelect;

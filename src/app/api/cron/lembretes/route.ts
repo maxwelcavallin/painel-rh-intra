@@ -1,28 +1,26 @@
 import { NextResponse } from "next/server";
 
 import { sendPendingReminders } from "@/server/forms";
+import { notifyExpiringVacations } from "@/server/vacation-deadlines";
+import { notifyPaymentDeadlines } from "@/server/vacation-alerts";
 
 /**
- * Lembrete automático de formulários — disparado pelo Vercel Cron.
+ * Passada diária — disparada pelo Vercel Cron.
  *
- * Esta rota está na allowlist do proxy porque o Cron não manda cookie de
- * sessão. Ela se defende sozinha com `CRON_SECRET`:
+ * Faz três coisas, na ordem de risco:
+ *   1. Férias com período concessivo vencendo (art. 137 — pagamento em dobro).
+ *   2. Pagamento e recibo a vencer (art. 145 — a multa mora aqui).
+ *   3. Formulários pendentes de resposta.
  *
- *   - Na Vercel, o Cron envia `Authorization: Bearer $CRON_SECRET`.
- *   - Sem o segredo configurado, a rota RECUSA em vez de liberar. Um segredo
- *     ausente não pode virar porta aberta para disparar WhatsApp de graça.
+ * Está na allowlist do proxy porque o Cron não manda cookie; defende-se com
+ * `CRON_SECRET`. Sem o segredo configurado, RECUSA em vez de liberar — segredo
+ * ausente não pode virar porta aberta para disparar mensagem de graça.
  *
- * Cadência no `vercel.json`. A função é idempotente dentro da janela: cada
- * formulário só recobra depois de passar outro `reminderAfterHours`.
- *
- * PLANO HOBBY: a Vercel permite 2 crons por projeto e UMA execução por dia —
- * não existe cadência horária no gratuito. Por isso o agendamento é diário e o
- * RH tem um botão de "cobrar agora" no painel, que chama a mesma função. Quem
- * define de fato o momento da cobrança é o `reminderAfterHours` de cada
- * formulário; o cron só é a passada diária que verifica os vencidos.
+ * PLANO HOBBY: a Vercel permite 2 crons e UMA execução por dia. Por isso tudo
+ * roda na mesma passada, e o RH tem botões de disparo manual nas telas.
  */
 
-/** Hobby permite até 60s de execução. O fan-out de WhatsApp é sequencial. */
+/** Hobby permite até 60s. Os envios são sequenciais. */
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
@@ -30,10 +28,7 @@ export async function GET(request: Request) {
 
   if (!secret) {
     console.error("[cron] CRON_SECRET não configurado; requisição recusada.");
-    return NextResponse.json(
-      { error: "Cron não configurado." },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: "Cron não configurado." }, { status: 503 });
   }
 
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
@@ -41,17 +36,26 @@ export async function GET(request: Request) {
   }
 
   try {
-    const report = await sendPendingReminders();
-    console.log(
-      `[cron] ${report.formsChecked} formulário(s) abertos, ` +
-        `${report.formsOverdue} vencido(s), ${report.managersNotified} gestor(es) avisado(s).`,
-    );
+    // `allSettled`: uma rotina que falha não pode impedir as outras de rodar.
+    const [vencimentos, pagamentos, formularios] = await Promise.allSettled([
+      notifyExpiringVacations(),
+      notifyPaymentDeadlines(),
+      sendPendingReminders(),
+    ]);
+
+    const unwrap = <T,>(r: PromiseSettledResult<T>) =>
+      r.status === "fulfilled" ? r.value : { erro: String(r.reason).slice(0, 300) };
+
+    const report = {
+      vencimentoDeFerias: unwrap(vencimentos),
+      pagamentoERecibo: unwrap(pagamentos),
+      formularios: unwrap(formularios),
+    };
+
+    console.log("[cron] passada diária concluída:", JSON.stringify(report));
     return NextResponse.json(report);
   } catch (error) {
-    console.error("[cron] falha ao processar lembretes:", error);
-    return NextResponse.json(
-      { error: "Falha ao processar lembretes." },
-      { status: 500 },
-    );
+    console.error("[cron] falha inesperada:", error);
+    return NextResponse.json({ error: "Falha ao processar." }, { status: 500 });
   }
 }
