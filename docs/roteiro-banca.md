@@ -57,12 +57,13 @@ Vá em **Vencimento de férias**.
 **O que observar:** a coluna *Conceder até* é o prazo do art. 137, e a
 *Situação* traduz a urgência. Você verá o espectro completo:
 
-- **Larissa** — vencida há 85 dias. Ela entrou em 2024, o primeiro período
-  fechou em maio de 2025 e o prazo de concessão passou em maio de 2026. Ninguém
-  percebeu. É o caso que custa dinheiro.
-- **Bruno** — crítico, 9 dias para o prazo.
-- **Tiago** — atenção, 63 dias.
-- **Quatro pessoas em dia**, com o histórico já quitado.
+- **Larissa Antunes Peixoto** — *vencida*. Entrou em maio de 2024, o primeiro
+  período fechou em maio de 2025 e o prazo de concessão passou em maio de 2026.
+  Ninguém percebeu. É o caso que custa dinheiro.
+- **Bruno Sampaio Rocha** — *crítico*, com o prazo em 14/08/2026.
+- **Tiago Moreira Lins** — *atenção*, prazo em 07/10/2026.
+- **O restante em dia**, com o histórico já quitado — inclusive quem nunca
+  chegou a ter um período fechado.
 
 A conta não é "12 meses após a admissão". O sistema percorre todos os períodos
 que já fecharam, consome o que a pessoa já usufruiu na ordem em que a lei manda
@@ -73,6 +74,13 @@ já quitou tudo sai da lista.
 > período mais recente, cujo prazo está sempre no futuro: a condição "vencido"
 > era inalcançável e o painel nunca acusaria ninguém. O teste automatizado
 > escrito depois expôs a falha. Hoje são 321 verificações cobrindo esse caminho.
+
+> **Nota para quem for demonstrar:** os prazos correm de verdade. O caso
+> *crítico* do Bruno vence em 14/08/2026 — depois dessa data ele aparece como
+> *vencido*, e a tela passa a mostrar dois vencidos em vez de um vencido e um
+> crítico. O cálculo continua certo; só o roteiro acima é que desatualiza.
+> Para recompor o cenário, ajuste as contagens de `historico()` em
+> `src/db/seed.ts` e rode `npm run db:seed && npm run db:equipe`.
 
 ### 3. As regras da CLT aplicadas na entrada (4 min)
 
@@ -189,10 +197,18 @@ produto incompleto:
 
 ## Sobre os dados
 
-Os sete colaboradores do ambiente — Bruno, Camila, Tiago, Larissa, Rodrigo,
+O ambiente tem dois grupos de pessoas, e a distinção importa:
+
+**Os sete do cenário de demonstração** — Bruno, Camila, Tiago, Larissa, Rodrigo,
 Patrícia e Helena — são **inteiramente fictícios**. Nomes, CPFs, RGs, endereços
 e filiação foram gerados para a demonstração e não correspondem a pessoa alguma.
 Os CPFs têm dígito verificador válido apenas para o formulário aceitá-los.
+
+**As contas da equipe da 01 Tec**, usadas para testar o produto, têm nome e
+e-mail reais. Todo o resto — CPF, RG, nascimento, endereço, filiação e data de
+admissão — é preenchimento, pelo mesmo motivo: são contas de teste, não
+cadastro de RH. O telefone fica deliberadamente em branco, para que nenhum
+número inventado receba mensagem de verdade.
 
 Dados sensíveis nunca aparecem em log nem em endereço de página, e são exibidos
 mascarados fora da tela de edição.
