@@ -1,36 +1,179 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Intranet RH — 01 Tecnologia
 
-## Getting Started
+Férias e comunicação interna. Next.js 16 (App Router) · MUI v9 · Drizzle + Neon · Auth.js.
 
-First, run the development server:
+## Estado atual
+
+| Fase | Escopo | Status |
+|---|---|---|
+| 0 | Fundação: tema, schema, Auth.js, deny-by-default, seed fictício | ✅ código pronto |
+| — | Recuperação de senha via WhatsApp (Zaia) | ✅ código pronto |
+| 1 | Núcleo de férias: fatos determinísticos, agente IA, solicitar/aprovar | ✅ código pronto |
+| 2 | Cadastro completo de colaborador + ViaCEP + RMC | ✅ verificado |
+| 3 | Avisos do RH (fan-out Discord + WhatsApp) | ✅ verificado |
+| 4 | Formulários + dashboard do gestor + Vercel Cron | ✅ verificado |
+| 5 | Calendário e listagem de férias aprovadas | ✅ verificado |
+
+### Limites do plano gratuito da Vercel (Hobby)
+
+O que **cabe** e está no ar:
+
+- 1 cron job (`/api/cron/lembretes`), **uma execução por dia** às 12:00 UTC
+  (09:00 em Brasília). O Hobby permite no máximo 2 crons e não aceita cadência
+  horária — por isso o RH tem um botão **"Cobrar pendentes agora"** no painel de
+  formulários, que roda exatamente a mesma rotina sob demanda.
+- Funções até 60s (`maxDuration` declarado na rota do cron).
+
+O que ficou de **fora por causa do plano** e está no roadmap:
+
+- Cobrança de formulários de hora em hora — exigiria o plano Pro.
+
+## Rodando localmente
 
 ```bash
+npm install
+cp .env.example .env.local     # preencha DATABASE_URL e AUTH_SECRET
+npm run db:migrate             # cria as 8 tabelas
+npm run db:seed                # 1 RH + 2 gestores + 4 colaboradores (100% fictícios)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+O seed imprime no terminal os e-mails e senhas de demonstração por papel.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Variáveis de ambiente
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Var | Obrigatória | Para quê |
+|---|---|---|
+| `DATABASE_URL` | sim | Neon. Via Vercel: Storage → Add Database → Neon, depois `vercel env pull .env.local`. |
+| `AUTH_SECRET` | sim | Assinatura da sessão. Gere com `openssl rand -base64 32`. |
+| `ANTHROPIC_API_KEY` | não | Agente que julga as férias. Sem ela, o parecer cai no fallback determinístico. |
+| `ZAIA_PASSWORD_RESET_WEBHOOK_URL` | não | Código de recuperação de senha por WhatsApp. |
+| `ZAIA_WEBHOOK_URL` | não | Decisão de férias, avisos, lembretes. |
+| `DISCORD_WEBHOOK_URL` | não | Avisos no Discord. |
+| `CRON_SECRET` | não | Protege a rota agendada (Fase 4). |
 
-## Learn More
+Canal externo sem env var vira **no-op registrado no log** — o app nunca quebra
+por causa de um webhook indisponível.
 
-To learn more about Next.js, take a look at the following resources:
+## Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Comando | O que faz |
+|---|---|
+| `npm run dev` | Servidor de desenvolvimento |
+| `npm run build` | Build de produção |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm run test:clt` | Regras da CLT — 35 verificações, sem banco e sem rede |
+| `npm run test:cadastro` | RMC, validação de CPF e mascaramento — 34 verificações, puro |
+| `npm run test:ferias` | Núcleo de férias — 13 verificações contra o banco real |
+| `npm run test:colaborador` | Cadastro de colaborador — 20 verificações contra o banco real |
+| `npm run test:avisos` | Avisos e fan-out — 23 verificações. **Publica de verdade no Discord** se o webhook estiver configurado |
+| `npm run test:formularios` | Formulários, placar por equipe e lembretes — 33 verificações |
+| `npm run test:agente` | Agente da Anthropic de verdade — consome tokens, exige `ANTHROPIC_API_KEY` |
+| `npm run db:check` | Testa a conexão com o Neon pelo caminho HTTPS que o app usa |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Os testes contra o banco gravam e apagam os próprios dados; `test:ferias` mexe
+nas solicitações do Bruno do seed.
+| `npm run db:generate` | Gera SQL a partir do schema |
+| `npm run db:migrate` | Aplica as migrations |
+| `npm run db:seed` | Popula dados fictícios |
+| `npm run db:studio` | Drizzle Studio |
 
-## Deploy on Vercel
+## Arquitetura
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Segurança — "nenhuma rota pública", em duas camadas
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+O Next.js 16 renomeou `middleware.ts` para **`proxy.ts`**, e a própria
+documentação diz que ele é uma checagem *otimista* que não deve ser a única
+defesa. Então são duas camadas:
+
+1. **`src/proxy.ts`** — deny-by-default. Bloqueia tudo; só `/login`,
+   `/esqueci-senha`, `/redefinir-senha`, `/api/auth/*` e `/api/cron/*` escapam.
+   Lê apenas o cookie, nunca o banco. Rota nova nasce protegida por omissão.
+2. **`src/lib/dal.ts`** — a defesa real. `requireSession()`, `requireRole()`,
+   `requireRH()`, `requireManagerOrRH()` são chamados dentro de **cada** page,
+   Server Action e Route Handler, antes de qualquer código de negócio.
+
+A checagem **não** é feita em `layout.tsx`: layout não re-renderiza a cada
+navegação e não impede segmentos aninhados nem Server Actions de rodarem.
+
+Escopo por papel é aplicado **na query**, não na renderização — o gestor vê só
+a própria equipe porque o `where` filtra por `managerId`.
+
+### A IA não pode derrubar a lei
+
+- `src/lib/clt.ts` — regras da CLT e aritmética de data. Puro, sem banco, sem rede.
+- `src/server/facts.ts` — **mede**: saldo, sobreposição, feriados, antecedência.
+  Produz `conflicts` (bloqueio duro) e `warnings` (não bloqueia).
+- `src/server/agent.ts` — **explica**, e decide só os casos cinzentos.
+
+Se `conflicts` não estiver vazio, a reprovação é imposta **em código** depois da
+resposta do modelo (função `clamp`). O papel da IA ali é escrever o "porquê"
+legível, não reabrir a decisão. Isso mantém o art. 134 §3º fora do alcance de
+alucinação e de prompt injection vindo do campo de observações.
+
+Sem `ANTHROPIC_API_KEY`, ou se a chamada falhar, o parecer cai num fallback
+determinístico — a solicitação nunca fica travada esperando a IA.
+
+### Feriados
+
+Nacionais vêm da BrasilAPI **com cálculo local de fallback** (Páscoa por
+Meeus/Jones/Butcher). Como o feriado alimenta uma regra que reprova, ela não
+pode parar de valer porque uma API caiu. Estadual (PR) e municipal (Curitiba)
+são config estática em `src/server/holidays.ts`.
+
+### Armadilhas que já custaram caro aqui
+
+- **Banco dedicado, sempre.** `npm run db:migrate` aborta se encontrar tabelas
+  que não são deste projeto. A trava existe porque uma migration já foi aplicada
+  por engano no banco de outro produto que tinha `users` e `notifications`
+  próprios; como o driver HTTP do Neon não tem transação, ela ficou aplicada
+  pela metade.
+- **Migration vai por HTTPS, não por TCP.** `drizzle-kit migrate` abre conexão na
+  porta 5432, que costuma estar fechada em rede corporativa — ele trava em
+  "applying migrations…" sem erro. Por isso `db:migrate` usa `scripts/migrate.ts`.
+  O `drizzle-kit generate` continua gerando o SQL (é offline).
+- **Nada de passar função pela fronteira server→client.** Um `component={NextLink}`
+  ou uma constante importada de um módulo `"use client"` a partir de um Server
+  Component chega como `undefined` ou explode em runtime. Por isso as constantes
+  da marca moram em `lib/brand.ts` (sem `"use client"`) e o link é registrado
+  uma vez no tema via `MuiButtonBase.LinkComponent`.
+- **CPF fictício precisa de dígito verificador válido.** O formulário valida, então
+  um CPF inventado à mão deixa o próprio registro do seed impossível de editar.
+  `seed.ts` calcula os dígitos e se auto-verifica no final.
+- **Entrega no Discord é de CANAL, não de pessoa.** O webhook publica num canal
+  único; gravar uma linha de entrega por destinatário fingiria um envio
+  individual que não aconteceu. Por isso `broadcast_deliveries.user_id` é
+  nullable: `NULL` = entrega de canal. WhatsApp, esse sim, é uma linha por pessoa.
+- **Audiência sem valor não pode virar "todo mundo".** Um "setor" sem setor
+  escolhido seleciona ZERO pessoas, nunca a empresa inteira — o fallback
+  silencioso aqui mandaria um aviso interno de área para todos.
+- **`isCuritibaMetro` é derivado, nunca digitado.** Calculado no save a partir de
+  cidade+UF, com a mesma função pura usada na tela (`lib/rmc.ts`), para o que se
+  vê e o que se grava não divergirem. A UF entra na conta: existe Lapa em SP e
+  Rio Negro em SC, e nenhuma das duas é da RMC.
+
+## Roadmap pós-entrega
+
+- **Envio de e-mail** (comunicados, decisões de férias, lembretes) — v1 não manda
+  e-mail nenhum; WhatsApp e in-app cobrem tudo.
+- **DM no Discord para o gestor** — webhook publica em canal fixo e não faz
+  mensagem privada. Precisaria de um bot (`DISCORD_BOT_TOKEN`), o bot no mesmo
+  servidor das pessoas, e o **ID numérico** de cada uma (a API não resolve
+  `@handle`). A coluna `users.discord_user_id` já existe para isso; hoje o gestor
+  é avisado por WhatsApp + in-app.
+- **Acesso restrito para a Sênior** — visão só da janela de férias necessária,
+  sem visibilidade interna de RH/gestores.
+
+## Pendências conhecidas
+
+- **Leitura do art. 134 §3º:** implementada a literal (bloqueia início na sexta
+  e no sábado). A leitura mais rígida — que também bloqueia a quinta quando a
+  empresa não trabalha aos sábados — está pronta atrás de
+  `STRICT_SATURDAY_AS_REST` em `src/lib/clt.ts`. Falta o "de acordo" do
+  RH/jurídico.
+- **Lista de feriados PR/Curitiba:** conferida por pesquisa pública, não pelo
+  decreto oficial. Vale a confirmação do RH antes de ir pro ar.
+- **Logo:** o lockup é desenhado em código (`src/components/logo.tsx`), com
+  variante em negativo para a AppBar. Trocar por SVG oficial quando chegar — a
+  API do componente não muda.

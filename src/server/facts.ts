@@ -1,0 +1,394 @@
+import "server-only";
+
+import { and, eq, ne, or } from "drizzle-orm";
+
+import { db } from "@/db";
+import { users, vacationRequests } from "@/db/schema";
+import {
+  acquisitivePeriodFor,
+  addDays,
+  blockedStartWeekdays,
+  daysBetweenInclusive,
+  formatBR,
+  MAX_DAYS_PER_PERIOD,
+  MIN_ANY_FRACTION,
+  MIN_LONGEST_FRACTION,
+  MIN_NOTICE_DAYS,
+  rangesOverlap,
+  toUTC,
+  twoDaysAfter,
+  WEEKDAY_NAME,
+  WEEKLY_REST_DAY,
+  weekdayOf,
+  type AcquisitivePeriod,
+} from "@/lib/clt";
+
+import { getHolidaysForRange, type Holiday } from "./holidays";
+
+/**
+ * Fatos determinísticos sobre uma solicitação de férias.
+ *
+ * Esta camada NÃO opina — ela mede. Regras que a lei trata como vedação viram
+ * `conflicts` (bloqueio duro); o resto vira `warnings`. A IA recebe isto pronto
+ * e julga em cima; ela nunca recalcula data nem inventa saldo.
+ */
+
+/**
+ * Toda a aritmética de data e as constantes legais vivem em `@/lib/clt` —
+ * funções puras, testáveis sem banco (ver `scripts/smoke-clt.ts`).
+ */
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tipo do resultado                                                   */
+/* ------------------------------------------------------------------ */
+
+export type VacationFacts = {
+  request: {
+    startDate: string;
+    endDate: string;
+    days: number;
+    startWeekday: string;
+  };
+  employee: {
+    id: string;
+    name: string;
+    sector: string | null;
+    admissionDate: string | null;
+    monthsSinceAdmission: number | null;
+  };
+  balance: {
+    acquisitivePeriod: AcquisitivePeriod | null;
+    daysAlreadyTaken: number;
+    daysRequested: number;
+    daysRemainingAfter: number | null;
+  };
+  /** Cada flag é verdadeira/falsa por medição, nunca por opinião. */
+  flags: {
+    endBeforeStart: boolean;
+    startsInThePast: boolean;
+    beforeFirstAcquisitivePeriod: boolean;
+    selfOverlaps: boolean;
+    exceedsAnnualLimit: boolean;
+    startsWithinTwoDaysOfHoliday: boolean;
+    startsWithinTwoDaysOfWeeklyRest: boolean;
+    belowMinimumFraction: boolean;
+    insufficientNotice: boolean;
+    teamOverlap: boolean;
+  };
+  details: {
+    /** Feriado que disparou o bloqueio, se houver. */
+    blockingHoliday: Holiday | null;
+    overlappingOwnRequests: { start: string; end: string; status: string }[];
+    teammatesOnVacation: { name: string; start: string; end: string }[];
+    holidaysInsideRange: Holiday[];
+    noticeDays: number;
+  };
+  /** Bloqueios duros. Qualquer item aqui = reprovação automática. */
+  conflicts: string[];
+  /** Alertas que NÃO bloqueiam — a IA e o humano pesam. */
+  warnings: string[];
+};
+
+/* ------------------------------------------------------------------ */
+/* Cálculo                                                             */
+/* ------------------------------------------------------------------ */
+
+export async function buildVacationFacts(params: {
+  userId: string;
+  startDate: string;
+  endDate: string;
+  /** Ignora esta solicitação ao checar sobreposição (usado ao reavaliar). */
+  excludeRequestId?: string;
+}): Promise<VacationFacts> {
+  const { userId, startDate, endDate } = params;
+
+  const [employee] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      sector: users.sector,
+      admissionDate: users.admissionDate,
+      managerId: users.managerId,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!employee) throw new Error("Colaborador não encontrado.");
+
+  const conflicts: string[] = [];
+  const warnings: string[] = [];
+
+  const days = daysBetweenInclusive(startDate, endDate);
+  const today = todayISO();
+
+  /* --- Validações estruturais ------------------------------------- */
+
+  const endBeforeStart = endDate < startDate;
+  if (endBeforeStart) {
+    conflicts.push("A data de término é anterior à data de início.");
+  }
+
+  const startsInThePast = startDate < today;
+  if (startsInThePast) {
+    conflicts.push(
+      `A data de início (${formatBR(startDate)}) já passou. Férias não podem ser solicitadas retroativamente.`,
+    );
+  }
+
+  /* --- Período aquisitivo ----------------------------------------- */
+
+  let monthsSinceAdmission: number | null = null;
+  let acquisitivePeriod: AcquisitivePeriod | null = null;
+  let beforeFirstAcquisitivePeriod = false;
+
+  if (employee.admissionDate) {
+    const admission = toUTC(employee.admissionDate);
+    const start = toUTC(startDate);
+    monthsSinceAdmission = Math.floor(
+      (start.getTime() - admission.getTime()) / (30.44 * 86_400_000),
+    );
+
+    beforeFirstAcquisitivePeriod = start.getTime() < admission.getTime() + 365 * 86_400_000;
+    if (beforeFirstAcquisitivePeriod) {
+      conflicts.push(
+        `O colaborador ainda não completou 12 meses de período aquisitivo (admissão em ${formatBR(employee.admissionDate)}). Art. 130 da CLT.`,
+      );
+    }
+
+    acquisitivePeriod = acquisitivePeriodFor(employee.admissionDate, startDate);
+  } else {
+    warnings.push(
+      "Data de admissão não cadastrada — não foi possível calcular o período aquisitivo nem o saldo.",
+    );
+  }
+
+  /* --- Sobreposição com as próprias solicitações ------------------- */
+
+  const ownRequests = await db
+    .select({
+      id: vacationRequests.id,
+      startDate: vacationRequests.startDate,
+      endDate: vacationRequests.endDate,
+      status: vacationRequests.status,
+    })
+    .from(vacationRequests)
+    .where(
+      and(
+        eq(vacationRequests.userId, userId),
+        or(
+          eq(vacationRequests.status, "approved"),
+          eq(vacationRequests.status, "pending"),
+        ),
+        params.excludeRequestId
+          ? ne(vacationRequests.id, params.excludeRequestId)
+          : undefined,
+      ),
+    );
+
+  const overlappingOwnRequests = ownRequests
+    .filter((r) => rangesOverlap(startDate, endDate, r.startDate, r.endDate))
+    .map((r) => ({ start: r.startDate, end: r.endDate, status: r.status }));
+
+  const selfOverlaps = overlappingOwnRequests.length > 0;
+  if (selfOverlaps) {
+    const list = overlappingOwnRequests
+      .map((r) => `${formatBR(r.start)} a ${formatBR(r.end)} (${r.status})`)
+      .join("; ");
+    conflicts.push(`O período se sobrepõe a outra solicitação sua: ${list}.`);
+  }
+
+  /* --- Saldo do período aquisitivo -------------------------------- */
+
+  let daysAlreadyTaken = 0;
+  let daysRemainingAfter: number | null = null;
+  let exceedsAnnualLimit = false;
+
+  if (acquisitivePeriod) {
+    daysAlreadyTaken = ownRequests
+      .filter(
+        (r) =>
+          r.status === "approved" &&
+          r.startDate >= acquisitivePeriod!.start &&
+          r.startDate <= acquisitivePeriod!.end,
+      )
+      .reduce((sum, r) => sum + daysBetweenInclusive(r.startDate, r.endDate), 0);
+
+    const total = daysAlreadyTaken + days;
+    daysRemainingAfter = MAX_DAYS_PER_PERIOD - total;
+    exceedsAnnualLimit = total > MAX_DAYS_PER_PERIOD;
+
+    if (exceedsAnnualLimit) {
+      conflicts.push(
+        `O total de ${total} dias excede o limite de ${MAX_DAYS_PER_PERIOD} dias do período aquisitivo ` +
+          `(${formatBR(acquisitivePeriod.start)} a ${formatBR(acquisitivePeriod.end)}). ` +
+          `Já usufruídos: ${daysAlreadyTaken} dias. Art. 130 da CLT.`,
+      );
+    }
+  }
+
+  /* --- Art. 134 §3º: feriado e DSR -------------------------------- */
+
+  // A janela precisa passar de `endDate`: numa solicitação de 1 dia em 30/12,
+  // o feriado que bloqueia (01/01) cai no ano seguinte.
+  const holidays = await getHolidaysForRange(
+    addDays(startDate, -5),
+    addDays(endDate > startDate ? endDate : startDate, 5),
+  );
+
+  const twoDaysBefore = twoDaysAfter(startDate);
+  const blockingHoliday =
+    holidays.find((h) => twoDaysBefore.includes(h.date)) ?? null;
+
+  const startsWithinTwoDaysOfHoliday = blockingHoliday !== null;
+  if (startsWithinTwoDaysOfHoliday && blockingHoliday) {
+    conflicts.push(
+      `O início em ${formatBR(startDate)} (${WEEKDAY_NAME[weekdayOf(startDate)]}) cai nos dois dias que antecedem ` +
+        `o feriado ${blockingHoliday.scope} "${blockingHoliday.name}" (${formatBR(blockingHoliday.date)}). ` +
+        `Art. 134, §3º da CLT veda o início das férias nesse período.`,
+    );
+  }
+
+  // Dois dias antes do DSR (domingo) = sexta e sábado.
+  // Com a leitura estrita, o sábado também conta como descanso → quinta entra.
+  const startWeekday = weekdayOf(startDate);
+  const startsWithinTwoDaysOfWeeklyRest =
+    blockedStartWeekdays().includes(startWeekday);
+
+  if (startsWithinTwoDaysOfWeeklyRest) {
+    conflicts.push(
+      `O início em ${formatBR(startDate)} cai numa ${WEEKDAY_NAME[startWeekday]}, ` +
+        `dentro dos dois dias que antecedem o repouso semanal remunerado ` +
+        `(${WEEKDAY_NAME[WEEKLY_REST_DAY]}). Art. 134, §3º da CLT.`,
+    );
+  }
+
+  /* --- Art. 134 §1º: fracionamento -------------------------------- */
+
+  let belowMinimumFraction = false;
+  if (!endBeforeStart && days < MIN_ANY_FRACTION) {
+    belowMinimumFraction = true;
+    conflicts.push(
+      `Período de ${days} dia(s). Nenhuma fração de férias pode ter menos de ${MIN_ANY_FRACTION} dias corridos. Art. 134, §1º da CLT.`,
+    );
+  } else if (
+    !endBeforeStart &&
+    days < MIN_LONGEST_FRACTION &&
+    daysAlreadyTaken === 0
+  ) {
+    warnings.push(
+      `Esta é a primeira fração do período aquisitivo e tem ${days} dias. ` +
+        `Ao fracionar, um dos períodos precisa ter no mínimo ${MIN_LONGEST_FRACTION} dias corridos (art. 134, §1º) — ` +
+        `confirme que um período maior será usufruído depois.`,
+    );
+  }
+
+  /* --- Art. 135: antecedência ------------------------------------- */
+
+  const noticeDays = daysBetweenInclusive(today, startDate) - 1;
+  const insufficientNotice = noticeDays < MIN_NOTICE_DAYS && !startsInThePast;
+  if (insufficientNotice) {
+    warnings.push(
+      `Antecedência de ${noticeDays} dia(s). O art. 135 da CLT prevê comunicação com ${MIN_NOTICE_DAYS} dias de antecedência.`,
+    );
+  }
+
+  /* --- Sobreposição com a equipe ---------------------------------- */
+
+  // Sem gestor E sem setor não há "equipe" definida. Sem este guard a condição
+  // ficaria só "status=approved AND outro usuário", varrendo a empresa inteira
+  // e reportando gente de outra área como conflito de equipe.
+  const teamScope = employee.managerId
+    ? eq(users.managerId, employee.managerId)
+    : employee.sector
+      ? eq(users.sector, employee.sector)
+      : null;
+
+  const teammates = teamScope
+    ? await db
+        .select({
+          name: users.name,
+          start: vacationRequests.startDate,
+          end: vacationRequests.endDate,
+        })
+        .from(vacationRequests)
+        .innerJoin(users, eq(users.id, vacationRequests.userId))
+        .where(
+          and(
+            eq(vacationRequests.status, "approved"),
+            ne(vacationRequests.userId, userId),
+            teamScope,
+          ),
+        )
+    : [];
+
+  const teammatesOnVacation = teammates.filter((t) =>
+    rangesOverlap(startDate, endDate, t.start, t.end),
+  );
+
+  const teamOverlap = teammatesOnVacation.length > 0;
+  if (teamOverlap) {
+    const list = teammatesOnVacation
+      .map((t) => `${t.name} (${formatBR(t.start)} a ${formatBR(t.end)})`)
+      .join("; ");
+    warnings.push(
+      `${teammatesOnVacation.length} pessoa(s) da mesma equipe já têm férias aprovadas no período: ${list}.`,
+    );
+  }
+
+  /* --- Feriados dentro do período (informativo) ------------------- */
+
+  const holidaysInsideRange = holidays.filter(
+    (h) => h.date >= startDate && h.date <= endDate,
+  );
+
+  return {
+    request: {
+      startDate,
+      endDate,
+      days,
+      startWeekday: WEEKDAY_NAME[startWeekday],
+    },
+    employee: {
+      id: employee.id,
+      name: employee.name,
+      sector: employee.sector,
+      admissionDate: employee.admissionDate,
+      monthsSinceAdmission,
+    },
+    balance: {
+      acquisitivePeriod,
+      daysAlreadyTaken,
+      daysRequested: days,
+      daysRemainingAfter,
+    },
+    flags: {
+      endBeforeStart,
+      startsInThePast,
+      beforeFirstAcquisitivePeriod,
+      selfOverlaps,
+      exceedsAnnualLimit,
+      startsWithinTwoDaysOfHoliday,
+      startsWithinTwoDaysOfWeeklyRest,
+      belowMinimumFraction,
+      insufficientNotice,
+      teamOverlap,
+    },
+    details: {
+      blockingHoliday,
+      overlappingOwnRequests,
+      teammatesOnVacation,
+      holidaysInsideRange,
+      noticeDays,
+    },
+    conflicts,
+    warnings,
+  };
+}
+
+// Reexportados por conveniência: as telas já importam de `facts`.
+export { daysBetweenInclusive, formatBR };
