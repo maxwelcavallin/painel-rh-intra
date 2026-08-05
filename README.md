@@ -2,6 +2,21 @@
 
 Férias e comunicação interna. Next.js 16 (App Router) · MUI v9 · Drizzle + Neon · Auth.js.
 
+**Produção:** https://painel-rh-intra.vercel.app · projeto `cavallin/painel-rh-intra`
+
+Usuários de demonstração (senhas fictícias, dados 100% inventados):
+
+| Papel | E-mail | Senha |
+|---|---|---|
+| RH (admin master) | `rh@01tecnologia.demo` | `Rh@2026demo` |
+| Gestor (Tecnologia) | `rodrigo.gestor@01tecnologia.demo` | `Gestor@2026` |
+| Gestor (Operações) | `patricia.gestora@01tecnologia.demo` | `Gestor@2026` |
+| Colaborador | `bruno.rocha@01tecnologia.demo` | `Colab@2026` |
+
+> Produção e desenvolvimento compartilham o mesmo banco Neon, por decisão de
+> escopo desta entrega. Rodar `npm run db:seed` **apaga e recria** os dados que
+> estão no ar.
+
 ## Estado atual
 
 | Fase | Escopo | Status |

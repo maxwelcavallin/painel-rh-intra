@@ -44,3 +44,10 @@ next-env.d.ts
 
 # log do dev server iniciado destacado
 dev-server.log
+
+# Linhas abaixo acrescentadas pelo `vercel link`. Já estão cobertas acima; a
+# reafirmação de `.env*` no fim anulava a exceção do .env.example, porque no
+# gitignore a ÚLTIMA regra que casa é a que vale. Exceção reposta ao final.
+.vercel
+.env*
+!.env.example

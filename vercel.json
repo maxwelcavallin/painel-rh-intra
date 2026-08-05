@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "comment": "Plano Hobby permite 2 crons e UMA execução por dia — nada de horário. 12:00 UTC = 09:00 em Brasília.",
       "path": "/api/cron/lembretes",
       "schedule": "0 12 * * *"
     }
