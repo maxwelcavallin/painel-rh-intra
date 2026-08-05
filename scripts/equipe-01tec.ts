@@ -33,6 +33,26 @@ import { isValidCpf } from "../src/lib/format";
  * dados de cadastro e NÃO mexe na senha — quem já trocou continua com a sua.
  */
 
+/**
+ * Senha inicial de cada pessoa — lida do ambiente, NUNCA escrita aqui.
+ *
+ * O repositório é público. Estas contas dão acesso real ao sistema, inclusive
+ * a de RH, que é admin master e enxerga CPF, RG e endereço de todo mundo.
+ * Senha em arquivo versionado é senha entregue a quem abrir o GitHub.
+ *
+ * Moram em `.env.local`, que o git ignora. Veja `.env.example` para a lista.
+ */
+function senhaDe(variavel: string): string {
+  const valor = process.env[variavel];
+  if (!valor) {
+    throw new Error(
+      `Falta ${variavel} no .env.local. As senhas da equipe não moram mais no ` +
+        `código — veja .env.example para a lista completa.`,
+    );
+  }
+  return valor;
+}
+
 type Pessoa = {
   name: string;
   email: string;
@@ -71,7 +91,7 @@ const EQUIPE: Pessoa[] = [
   {
     name: "Maxwel Cavallin",
     email: "maxwel.cavallin@01tec.com.br",
-    senha: "Gestor01Tec@26",
+    senha: senhaDe("EQUIPE_SENHA_MAXWEL"),
     role: "gestor",
     sector: "Tecnologia",
     position: "Coordenador de Tecnologia",
@@ -95,7 +115,7 @@ const EQUIPE: Pessoa[] = [
   {
     name: "Recursos Humanos 01 Tec",
     email: "rh@01tec.com.br",
-    senha: "RH01Tec@2026",
+    senha: senhaDe("EQUIPE_SENHA_RH"),
     role: "admin",
     sector: "Recursos Humanos",
     position: "Analista de RH",
@@ -117,7 +137,7 @@ const EQUIPE: Pessoa[] = [
   {
     name: "Thayla Zappielo Oliveira",
     email: "thayla.oliveira@01tec.com.br",
-    senha: "Thayla01Tec@26",
+    senha: senhaDe("EQUIPE_SENHA_THAYLA"),
     role: "user",
     sector: "Tecnologia",
     position: "Analista de Produto",
@@ -140,7 +160,7 @@ const EQUIPE: Pessoa[] = [
   {
     name: "Rafaela Nascimento",
     email: "rafaela.nascimento@01tec.com.br",
-    senha: "Rafaela01Tec@26",
+    senha: senhaDe("EQUIPE_SENHA_RAFAELA"),
     role: "user",
     sector: "Tecnologia",
     position: "Analista de Qualidade",
@@ -163,7 +183,7 @@ const EQUIPE: Pessoa[] = [
   {
     name: "Kamilly Vitoria Melo Mateus",
     email: "kamilly.mateus@01tec.com.br",
-    senha: "Kamilly01Tec@26",
+    senha: senhaDe("EQUIPE_SENHA_KAMILLY"),
     role: "user",
     sector: "Tecnologia",
     position: "Assistente de Suporte",
@@ -186,7 +206,7 @@ const EQUIPE: Pessoa[] = [
   {
     name: "Kauan Henrique de Jesus Kutzki",
     email: "kauan.jesus@01tec.com.br",
-    senha: "Kauan01Tec@26",
+    senha: senhaDe("EQUIPE_SENHA_KAUAN"),
     role: "user",
     sector: "Tecnologia",
     position: "Desenvolvedor Júnior",

@@ -49,8 +49,9 @@ checada de novo na hora de ler ou gravar, nunca só na tela.
 Entre como RH:
 
 ```
-rh@01tec.com.br  /  RH01Tec@2026
+rh@01tec.com.br
 ```
+(senha entregue à parte)
 
 Vá em **Vencimento de férias**.
 
@@ -87,8 +88,9 @@ já quitou tudo sai da lista.
 Saia e entre como colaborador:
 
 ```
-kauan.jesus@01tec.com.br  /  Kauan01Tec@26
+kauan.jesus@01tec.com.br
 ```
+(senha entregue à parte)
 
 Vá em **Solicitar férias** e tente, de propósito, o que a lei não permite:
 
@@ -118,8 +120,9 @@ Agora faça uma solicitação **válida** e envie.
 Entre como gestor:
 
 ```
-maxwel.cavallin@01tec.com.br  /  Gestor01Tec@26
+maxwel.cavallin@01tec.com.br
 ```
+(senha entregue à parte)
 
 Em **Aprovações**, você vê apenas quem reporta a você — o recorte é feito na
 consulta ao banco, não escondendo elementos da tela. Aprove a solicitação.
@@ -217,11 +220,14 @@ mascarados fora da tela de edição.
 
 ## Acessos
 
-| Papel | E-mail | Senha |
-| --- | --- | --- |
-| RH (admin master) | rh@01tec.com.br | `RH01Tec@2026` |
-| Gestor | maxwel.cavallin@01tec.com.br | `Gestor01Tec@26` |
-| Colaborador | kauan.jesus@01tec.com.br | `Kauan01Tec@26` |
+| Papel | E-mail |
+| --- | --- |
+| RH (admin master) | rh@01tec.com.br |
+| Gestor | maxwel.cavallin@01tec.com.br |
+| Colaborador | kauan.jesus@01tec.com.br |
+
+As senhas são entregues à parte, por canal privado — este repositório é
+público e a conta de RH é admin master.
 
 ---
 

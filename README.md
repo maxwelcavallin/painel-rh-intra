@@ -8,10 +8,10 @@ Usuários de demonstração (senhas fictícias, dados 100% inventados):
 
 | Papel | E-mail | Senha |
 |---|---|---|
-| RH (admin master) | `rh@01tecnologia.demo` | `Rh@2026demo` |
-| Gestor (Tecnologia) | `rodrigo.gestor@01tecnologia.demo` | `Gestor@2026` |
-| Gestor (Operações) | `patricia.gestora@01tecnologia.demo` | `Gestor@2026` |
-| Colaborador | `bruno.rocha@01tecnologia.demo` | `Colab@2026` |
+| RH (admin master) | `rh@01tecnologia.demo` | ver `.env.local` |
+| Gestor (Tecnologia) | `rodrigo.gestor@01tecnologia.demo` | ver `.env.local` |
+| Gestor (Operações) | `patricia.gestora@01tecnologia.demo` | ver `.env.local` |
+| Colaborador | `bruno.rocha@01tecnologia.demo` | ver `.env.local` |
 
 > Produção e desenvolvimento compartilham o mesmo banco Neon, por decisão de
 > escopo desta entrega. Rodar `npm run db:seed` **apaga e recria** os dados que

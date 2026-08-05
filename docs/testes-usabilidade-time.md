@@ -26,14 +26,18 @@ especificamente atrapalhou.
 regras depende de quem você é, e testar com o login errado invalida o
 resultado.
 
-| Nome | E-mail | Senha | Papel |
-| --- | --- | --- | --- |
-| Thayla Zappielo Oliveira | thayla.oliveira@01tec.com.br | `Thayla01Tec@26` | Colaborador |
-| Rafaela Nascimento | rafaela.nascimento@01tec.com.br | `Rafaela01Tec@26` | Colaborador |
-| Kamilly Vitoria Melo Mateus | kamilly.mateus@01tec.com.br | `Kamilly01Tec@26` | Colaborador |
-| Kauan Henrique de Jesus Kutzki | kauan.jesus@01tec.com.br | `Kauan01Tec@26` | Colaborador |
-| Maxwel Cavallin | maxwel.cavallin@01tec.com.br | `Gestor01Tec@26` | Gestor |
-| RH (admin master) | rh@01tec.com.br | `RH01Tec@2026` | RH |
+| Nome | E-mail | Papel |
+| --- | --- | --- |
+| Thayla Zappielo Oliveira | thayla.oliveira@01tec.com.br | Colaborador |
+| Rafaela Nascimento | rafaela.nascimento@01tec.com.br | Colaborador |
+| Kamilly Vitoria Melo Mateus | kamilly.mateus@01tec.com.br | Colaborador |
+| Kauan Henrique de Jesus Kutzki | kauan.jesus@01tec.com.br | Colaborador |
+| Maxwel Cavallin | maxwel.cavallin@01tec.com.br | Gestor |
+| RH (admin master) | rh@01tec.com.br | RH |
+
+> **As senhas não estão neste arquivo.** O repositório é público e a conta de
+> RH é admin master. Peça as credenciais ao responsável — elas ficam em
+> `docs/ACESSOS.local.md`, que o git ignora.
 
 Os quatro colaboradores reportam ao Maxwel. Isso importa: solicitação de férias
 precisa passar pelo gestor **e** pelo RH.

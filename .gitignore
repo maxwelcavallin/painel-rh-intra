@@ -51,3 +51,6 @@ dev-server.log
 .vercel
 .env*
 !.env.example
+
+# Acessos de teste em texto puro — nunca versionar (repositório público).
+docs/ACESSOS.local.md

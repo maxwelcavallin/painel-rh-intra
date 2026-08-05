@@ -37,10 +37,30 @@ import {
 
 const db = drizzle(neon(process.env.DATABASE_URL!), { schema });
 
+/**
+ * Senhas dos usuários de demonstração — vêm do ambiente, NUNCA do código.
+ *
+ * Estas contas são administrativas de verdade: `rh@01tecnologia.demo` é admin
+ * master do mesmo sistema que roda em produção. Com o repositório público,
+ * senha escrita aqui é senha entregue a qualquer pessoa que abra o GitHub.
+ *
+ * Ficam em `.env.local` (ignorado pelo git) e nas variáveis da Vercel.
+ */
+function senhaObrigatoria(nome: string): string {
+  const valor = process.env[nome];
+  if (!valor) {
+    throw new Error(
+      `Falta ${nome} no .env.local. As senhas do seed não moram mais no código — ` +
+        `veja .env.example para a lista completa.`,
+    );
+  }
+  return valor;
+}
+
 const SENHA_DEMO = {
-  admin: "Rh@2026demo",
-  gestor: "Gestor@2026",
-  user: "Colab@2026",
+  admin: senhaObrigatoria("SEED_SENHA_ADMIN"),
+  gestor: senhaObrigatoria("SEED_SENHA_GESTOR"),
+  user: senhaObrigatoria("SEED_SENHA_USER"),
 };
 
 /**

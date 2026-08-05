@@ -80,7 +80,7 @@ async function main() {
   await db.delete(users).where(eq(users.email, EMAIL));
 
   console.log("\n— Criação");
-  const criado = await createEmployee(base(), "Colab@2026");
+  const criado = await createEmployee(base(), "SenhaDescartavel@2026");
   check("criado com sucesso", criado.ok, true);
   if (!criado.ok) throw new Error(criado.error);
   check("isCuritibaMetro derivado (São José dos Pinhais/PR)", criado.isCuritibaMetro, true);
@@ -95,17 +95,17 @@ async function main() {
   console.log("\n— Validação recusa dado ruim");
   const cpfRuim = await createEmployee(
     base({ email: "outro@01tecnologia.demo", cpf: "111.111.111-11" }),
-    "Colab@2026",
+    "SenhaDescartavel@2026",
   );
   check("CPF repetido rejeitado", cpfRuim.ok, false);
 
   const cpfErrado = await createEmployee(
     base({ email: "outro@01tecnologia.demo", cpf: "529.982.247-26" }),
-    "Colab@2026",
+    "SenhaDescartavel@2026",
   );
   check("dígito verificador errado rejeitado", cpfErrado.ok, false);
 
-  const duplicado = await createEmployee(base(), "Colab@2026");
+  const duplicado = await createEmployee(base(), "SenhaDescartavel@2026");
   check("e-mail duplicado rejeitado", duplicado.ok, false);
 
   const senhaCurta = await createEmployee(
