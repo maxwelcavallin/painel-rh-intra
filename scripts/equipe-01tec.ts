@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "../src/db";
 import { cpfFicticio } from "../src/db/fake-cpf";
-import { users } from "../src/db/schema";
+import { users, vacationRequests } from "../src/db/schema";
 import { isValidCpf } from "../src/lib/format";
 
 /**
@@ -141,7 +141,7 @@ const EQUIPE: Pessoa[] = [
     role: "user",
     sector: "Tecnologia",
     position: "Analista de Produto",
-    admissionDate: "2025-04-07",
+    admissionDate: "2021-06-14",
     birthDate: "1997-02-19",
     cpfBase: "529183746",
     rg: "13.658.204-1",
@@ -164,7 +164,7 @@ const EQUIPE: Pessoa[] = [
     role: "user",
     sector: "Tecnologia",
     position: "Analista de Qualidade",
-    admissionDate: "2025-06-02",
+    admissionDate: "2023-09-05",
     birthDate: "1995-11-30",
     cpfBase: "630274815",
     rg: "14.203.876-9",
@@ -187,7 +187,7 @@ const EQUIPE: Pessoa[] = [
     role: "user",
     sector: "Tecnologia",
     position: "Assistente de Suporte",
-    admissionDate: "2025-08-11",
+    admissionDate: "2022-10-20",
     birthDate: "2001-07-05",
     cpfBase: "741385902",
     rg: "15.734.019-2",
@@ -210,7 +210,7 @@ const EQUIPE: Pessoa[] = [
     role: "user",
     sector: "Tecnologia",
     position: "Desenvolvedor Júnior",
-    admissionDate: "2025-10-20",
+    admissionDate: "2024-02-12",
     birthDate: "2000-03-14",
     cpfBase: "852496013",
     rg: "16.845.230-6",
@@ -227,6 +227,57 @@ const EQUIPE: Pessoa[] = [
     gestorEmail: "maxwel.cavallin@01tec.com.br",
   },
 ];
+
+
+/**
+ * Histórico de férias da equipe — o que dá matéria ao parecer.
+ *
+ * Sem histórico, a análise de risco do gestor não tem o que dizer: quatro
+ * pessoas admitidas ontem estão todas "em dia" e o parecer sai vazio, com razão.
+ * Estes registros produzem, em 05/08/2026, o espectro completo dentro da equipe
+ * do Maxwel — uma vencida, uma crítica, uma em atenção e uma em dia — e trazem
+ * padrões que o modelo consegue ler: sazonalidade, cancelamentos repetidos,
+ * venda de abono e pendência de pagamento.
+ *
+ * FICTÍCIO, como o resto do cadastro. Reescrito a cada `db:equipe`.
+ */
+type Ferias = {
+  inicio: string;
+  fim: string;
+  dias: number;
+  abono?: number;
+  /** Guarda a DATA do cancelamento, não um booleano. */
+  cancelada?: string;
+  antecipa13?: boolean;
+  pagarAte?: string;
+  pago?: boolean;
+  reciboAssinado?: boolean;
+};
+
+const HISTORICO: Record<string, Ferias[]> = {
+  // Admitida em 2021: tirou uma vez e depois cancelou duas seguidas. O período
+  // 2022-2023 venceu em 13/06/2024 sem ninguém notar.
+  "thayla.oliveira@01tec.com.br": [
+    { inicio: "2022-11-07", fim: "2022-12-06", dias: 30 },
+    { inicio: "2024-03-04", fim: "2024-04-02", dias: 30, cancelada: "2024-02-20" },
+    { inicio: "2025-03-03", fim: "2025-04-01", dias: 30, cancelada: "2025-02-25" },
+  ],
+  // Vendeu 10 dias de abono na única vez que tirou. Prazo aperta em 04/09/2026.
+  "rafaela.nascimento@01tec.com.br": [
+    { inicio: "2025-01-06", fim: "2025-01-25", dias: 20, abono: 10, antecipa13: true },
+  ],
+  // Duas férias em janeiro, sempre no mesmo mês — padrão que colide com o
+  // prazo de outubro.
+  "kamilly.mateus@01tec.com.br": [
+    { inicio: "2024-01-08", fim: "2024-02-06", dias: 30 },
+    { inicio: "2025-01-06", fim: "2025-02-04", dias: 30 },
+  ],
+  // Em dia e com férias já marcadas — mas o pagamento continua em aberto.
+  "kauan.jesus@01tec.com.br": [
+    { inicio: "2025-07-07", fim: "2025-08-05", dias: 30 },
+    { inicio: "2026-09-21", fim: "2026-10-05", dias: 15, pagarAte: "2026-09-17" },
+  ],
+};
 
 async function main() {
   // Falhar aqui, e não na tela: o formulário de edição valida o dígito
@@ -303,6 +354,40 @@ async function main() {
       .set({ managerId: gestorId })
       .where(eq(users.email, p.email));
   }
+
+  console.log("Recompondo o histórico de férias da equipe…");
+  let linhas = 0;
+  for (const [email, ferias] of Object.entries(HISTORICO)) {
+    const userId = idPorEmail.get(email);
+    if (!userId) throw new Error(`Sem usuário para ${email}.`);
+
+    // Apaga e regrava: o script é idempotente, e acumular duplicata a cada
+    // execução falsearia o saldo de dias usufruídos.
+    await db.delete(vacationRequests).where(eq(vacationRequests.userId, userId));
+    if (ferias.length === 0) continue;
+
+    await db.insert(vacationRequests).values(
+      ferias.map((f) => ({
+        userId,
+        startDate: f.inicio,
+        endDate: f.fim,
+        days: f.dias,
+        abonoPecuniario: (f.abono ?? 0) > 0,
+        abonoDays: f.abono ?? 0,
+        advance13th: f.antecipa13 ?? false,
+        status: f.cancelada ? ("cancelled" as const) : ("approved" as const),
+        rhApproval: "approved" as const,
+        managerApproval: "approved" as const,
+        cancelledAt: f.cancelada ? new Date(`${f.cancelada}T12:00:00Z`) : null,
+        cancelReason: f.cancelada ? "Remanejada por necessidade da operação." : null,
+        paymentDueDate: f.pagarAte ?? null,
+        paidAt: f.pago ? new Date(`${f.inicio}T12:00:00Z`) : null,
+        receiptSignedAt: f.reciboAssinado ? new Date(`${f.inicio}T12:00:00Z`) : null,
+      })),
+    );
+    linhas += ferias.length;
+  }
+  console.log(`✔ ${linhas} registro(s) de férias gravado(s).`);
 
   console.log(`\n✔ ${criados.length} criado(s), ${atualizados.length} atualizado(s).`);
   if (criados.length > 0) {

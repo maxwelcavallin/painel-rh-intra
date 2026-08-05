@@ -1,10 +1,17 @@
 import "server-only";
 
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, count, eq, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/db";
 import { users, vacationRequests } from "@/db/schema";
-import { COMPANY_NOTICE_DAYS, addDays, formatBR } from "@/lib/clt";
+import {
+  COMPANY_NOTICE_DAYS,
+  MAX_DAYS_PER_PERIOD,
+  addDays,
+  closedAcquisitivePeriods,
+  daysBetweenInclusive,
+  formatBR,
+} from "@/lib/clt";
 import { listVacationStatus } from "@/server/vacation-deadlines";
 
 import { askForJson, parseJsonLoose } from "./ai-client";
@@ -74,6 +81,28 @@ export type FatosPessoa = {
   cancelamentos: number;
   equipeNoMesmoPeriodo: { nome: string; inicio: string; fim: string }[];
   pendencias: string[];
+
+  /**
+   * TODOS os períodos aquisitivos já fechados, com quanto foi consumido de
+   * cada um. É o que revela acúmulo: dois períodos abertos ao mesmo tempo
+   * significam um passivo que dobra, e a tabela da tela só mostra o primeiro.
+   */
+  periodosAquisitivos: {
+    inicio: string;
+    fim: string;
+    concederAte: string;
+    diasConsumidos: number;
+    diasEmAberto: number;
+    situacao: "quitado" | "em aberto" | "vencido";
+  }[];
+  /** Dias desde o fim das últimas férias. `null` se nunca tirou. */
+  diasSemFerias: number | null;
+  /** Meses em que a pessoa historicamente sai — revela sazonalidade. */
+  mesesEmQueCostumaSair: string[];
+  diasVendidosComoAbono: number;
+  jaAntecipouO13: boolean;
+  /** Quantas pessoas respondem ao mesmo gestor. */
+  tamanhoDaEquipe: number;
 };
 
 export type FatosGerais = {
@@ -89,6 +118,16 @@ export type FatosGerais = {
   dossies: FatosPessoa[];
   /** Férias aprovadas à frente, agrupadas por mês — mostra concentração. */
   concentracaoPorMes: { mes: string; pessoas: string[] }[];
+
+  /** Saldo em aberto somado, inclusive de quem ainda não está em risco. */
+  totalDiasEmAberto: number;
+  /** Onde o passivo está concentrado. Ajuda a decidir por qual área começar. */
+  porSetor: { setor: string; pessoas: number; diasEmAberto: number; emRisco: number }[];
+  /**
+   * Meses dos próximos 12 sem ninguém de férias marcadas — as janelas em que
+   * dá para encaixar quem está vencendo sem furar a operação.
+   */
+  janelasLivres: string[];
 };
 
 /**
@@ -133,11 +172,27 @@ parecer de férias de UMA pessoa, para o RH e para o gestor dela.
 
 ${REGRAS_COMUNS}
 
-Aprofunde: use o histórico, os cancelamentos e a agenda da equipe para explicar
-COMO a pessoa chegou nesta situação e o que precisa ser combinado.
+APROFUNDE. Não repita o que a tela já mostra. O valor do parecer está em ler os
+sinais que só o histórico revela:
+
+- **periodosAquisitivos** traz TODOS os ciclos fechados e quanto foi consumido
+  de cada. Dois ciclos em aberto ao mesmo tempo é passivo que dobra — diga isso
+  explicitamente, com as duas datas.
+- **mesesEmQueCostumaSair** revela sazonalidade. Se o mês de costume cai depois
+  do prazo, aponte a colisão: é o motivo mais comum de o prazo estourar.
+- **diasSemFerias** dimensiona o descuido. Quem está há mais de 500 dias sem
+  férias não teve azar, teve falta de acompanhamento.
+- **cancelamentos** com datas mostram planejamento que não se sustenta. Se
+  cancelou perto do início, diga.
+- **equipeNoMesmoPeriodo** e **tamanhoDaEquipe** dizem se há espaço na agenda.
+  Numa equipe de 4, dois fora ao mesmo tempo é metade da área parada.
+- **diasVendidosComoAbono** e **jaAntecipouO13** indicam alguém que usa férias
+  como complemento de renda — relevante ao propor datas.
+
+Explique COMO a pessoa chegou nesta situação e o que precisa ser combinado.
 
 ${FORMATO}
-Use no máximo 4 riscos e 4 ações.`;
+Use no máximo 5 riscos e 5 ações.`;
 
 const PROMPT_GERAL = `Você é analista sênior de RH da 01 Tecnologia e escreve o parecer
 de risco da CARTEIRA de férias, para o RH e para gestores.
@@ -156,9 +211,26 @@ ${REGRAS_COMUNS}
 12. Se o histórico de alguém explicar o problema — cancelamentos seguidos,
     período nunca usufruído, segundo ciclo aquisitivo fechando por cima do
     primeiro —, diga isso. É o que a tabela da tela não mostra.
+13. Use **periodosAquisitivos** para detectar ACÚMULO: mais de um ciclo em
+    aberto na mesma pessoa é o caso mais caro que existe, porque o passivo
+    dobra em vez de somar.
+14. Use **mesesEmQueCostumaSair** para antecipar colisão. Se o mês de costume
+    de alguém cai depois do prazo dela, aponte — repetir o padrão consuma a
+    dobra.
+15. Use **janelasLivres** para PROPOR ONDE ENCAIXAR. Apontar "precisa tirar
+    antes de outubro" sem dizer em que mês cabe deixa o trabalho pela metade.
+16. Use **porSetor** para dizer por qual área começar quando o passivo estiver
+    concentrado, e **tamanhoDaEquipe** para avisar quando encaixar alguém
+    deixaria a área descoberta.
 
 ${FORMATO}
 Use no máximo 6 riscos e 6 ações, em ordem de prioridade.`;
+
+
+const NOME_DO_MES = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
 
 const ROTULO_SITUACAO = {
   expired: "vencida",
@@ -194,6 +266,7 @@ async function montarDossie(
       days: vacationRequests.days,
       abonoDays: vacationRequests.abonoDays,
       status: vacationRequests.status,
+      advance13th: vacationRequests.advance13th,
       cancelledAt: vacationRequests.cancelledAt,
       paidAt: vacationRequests.paidAt,
       receiptSignedAt: vacationRequests.receiptSignedAt,
@@ -238,6 +311,52 @@ async function montarDossie(
     }
   }
 
+  const usufruidas = solicitacoes.filter(
+    (r) => r.status === "approved" && !r.cancelledAt,
+  );
+
+  /**
+   * Consumo período a período, na ordem em que a lei manda consumir.
+   *
+   * O saldo já usufruído é aplicado do período mais antigo para o mais novo —
+   * é o mesmo FIFO de `vacationDeadlineFor`. Sem isso, dois períodos abertos
+   * ao mesmo tempo ficariam invisíveis, e é justamente o caso mais caro.
+   */
+  let restante = s.daysTaken;
+  const periodosAquisitivos = closedAcquisitivePeriods(
+    s.admissionDate,
+    todayISO,
+  ).map((p) => {
+    const consumidos = Math.min(restante, MAX_DAYS_PER_PERIOD);
+    restante -= consumidos;
+    const emAberto = MAX_DAYS_PER_PERIOD - consumidos;
+    return {
+      inicio: formatBR(p.start),
+      fim: formatBR(p.end),
+      concederAte: formatBR(p.concessiveEnd),
+      diasConsumidos: consumidos,
+      diasEmAberto: emAberto,
+      situacao: (emAberto === 0
+        ? "quitado"
+        : p.concessiveEnd < todayISO
+          ? "vencido"
+          : "em aberto") as "quitado" | "em aberto" | "vencido",
+    };
+  });
+
+  const ultimaConcluida = usufruidas
+    .filter((r) => r.endDate < todayISO)
+    .map((r) => r.endDate)
+    .sort()
+    .at(-1);
+
+  const [{ total: tamanhoDaEquipe }] = s.managerId
+    ? await db
+        .select({ total: count() })
+        .from(users)
+        .where(and(eq(users.managerId, s.managerId), eq(users.isActive, true)))
+    : [{ total: 0 }];
+
   return {
     nome: s.name,
     setor: s.sector,
@@ -276,6 +395,18 @@ async function montarDossie(
         fim: formatBR(t.fim),
       })),
     pendencias,
+    periodosAquisitivos,
+    diasSemFerias: ultimaConcluida
+      ? daysBetweenInclusive(ultimaConcluida, todayISO) - 1
+      : null,
+    mesesEmQueCostumaSair: [
+      ...new Set(
+        usufruidas.map((r) => NOME_DO_MES[Number(r.startDate.slice(5, 7)) - 1]),
+      ),
+    ],
+    diasVendidosComoAbono: usufruidas.reduce((soma, r) => soma + r.abonoDays, 0),
+    jaAntecipouO13: solicitacoes.some((r) => r.advance13th && !r.cancelledAt),
+    tamanhoDaEquipe,
   };
 }
 
@@ -336,8 +467,48 @@ export async function reunirFatosGerais(
     porMes.set(mes, [...(porMes.get(mes) ?? []), a.nome]);
   }
 
+  // Onde o passivo mora. Um setor com 90 dias em aberto pede tratamento
+  // diferente de três setores com 30 cada.
+  const setores = new Map<string, { pessoas: number; dias: number; risco: number }>();
+  for (const p of status) {
+    const chave = p.sector ?? "Sem setor";
+    const atual = setores.get(chave) ?? { pessoas: 0, dias: 0, risco: 0 };
+    atual.pessoas += 1;
+    atual.dias += p.daysRemaining;
+    if (p.severity !== "ok") atual.risco += 1;
+    setores.set(chave, atual);
+  }
+
+  /**
+   * Meses dos próximos 12 sem ninguém de férias marcadas.
+   *
+   * É a informação que falta para transformar "precisa tirar antes de outubro"
+   * em "encaixe em setembro" — sem ela, o parecer aponta o problema mas não
+   * oferece onde resolver.
+   */
+  const ocupados = new Set(porMes.keys());
+  const janelasLivres: string[] = [];
+  const [anoBase, mesBase] = todayISO.split("-").map(Number);
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(Date.UTC(anoBase, mesBase - 1 + i, 1));
+    const chave = d.toISOString().slice(0, 7);
+    if (!ocupados.has(chave)) {
+      janelasLivres.push(`${NOME_DO_MES[d.getUTCMonth()]}/${d.getUTCFullYear()}`);
+    }
+  }
+
   return {
     escopo: ehRH ? "Toda a empresa" : "Equipe direta do gestor",
+    totalDiasEmAberto: status.reduce((soma, s) => soma + s.daysRemaining, 0),
+    porSetor: [...setores.entries()]
+      .map(([setor, v]) => ({
+        setor,
+        pessoas: v.pessoas,
+        diasEmAberto: v.dias,
+        emRisco: v.risco,
+      }))
+      .sort((a, b) => b.diasEmAberto - a.diasEmAberto),
+    janelasLivres,
     totalPessoas: status.length,
     vencidas: status.filter((s) => s.severity === "expired").length,
     criticas: status.filter((s) => s.severity === "critical").length,
@@ -476,7 +647,15 @@ type Bruto = {
  * Prazo vencido é risco alto por definição, e não por opinião do modelo.
  */
 function combinar(base: Parecer, bruto: Bruto | null, teto: number): Parecer {
-  if (!bruto?.resumo) return base;
+  if (!bruto?.resumo) {
+    // Sem isto, resposta truncada ou malformada cai no determinístico em
+    // silêncio e o parecer só parece "pobre" — foi exatamente o que aconteceu
+    // quando o teto de tokens ficou apertado demais.
+    console.warn(
+      "[parecer] resposta do modelo inutilizável; usando o caminho determinístico.",
+    );
+    return base;
+  }
 
   const risco =
     base.risco === "alto"
@@ -511,7 +690,7 @@ export async function gerarParecerGeral(
   const resposta = await askForJson({
     system: PROMPT_GERAL,
     user: JSON.stringify({ hoje: formatBR(todayISO), ...fatos }, null, 2),
-    maxTokens: 3000,
+    maxTokens: 6000,
   });
 
   if (!resposta) return { fatos, parecer: base };
@@ -530,9 +709,9 @@ export async function gerarParecerIndividual(
   const resposta = await askForJson({
     system: PROMPT_INDIVIDUAL,
     user: JSON.stringify({ hoje: formatBR(todayISO), ...fatos }, null, 2),
-    maxTokens: 2000,
+    maxTokens: 4000,
   });
 
   if (!resposta) return { fatos, parecer: base };
-  return { fatos, parecer: combinar(base, parseJsonLoose<Bruto>(resposta.text), 4) };
+  return { fatos, parecer: combinar(base, parseJsonLoose<Bruto>(resposta.text), 5) };
 }
