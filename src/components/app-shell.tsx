@@ -187,10 +187,8 @@ export function AppShell({
       >
         <Toolbar sx={{ minHeight: `${APPBAR_HEIGHT}px !important`, gap: 1.5 }}>
           {/*
-            Dois botões e não um: no celular o hambúrguer abre a gaveta
-            temporária, no desktop ele recolhe a fixa. São estados diferentes, e
-            resolver por media query em JS exigiria saber a largura antes de
-            renderizar — o CSS já sabe.
+            No celular o hambúrguer vem antes de tudo e abre a gaveta
+            temporária — é o padrão que o dedo procura no canto.
           */}
           <IconButton
             color="inherit"
@@ -201,19 +199,38 @@ export function AppShell({
           >
             <MenuIcon size={22} />
           </IconButton>
-          <IconButton
-            color="inherit"
-            edge="start"
-            onClick={() => setRecolhido(!recolhido)}
-            sx={{ display: { xs: "none", md: "inline-flex" } }}
-            aria-label={recolhido ? "Expandir menu" : "Recolher menu"}
-          >
-            <MenuIcon size={22} />
-          </IconButton>
 
-          {/* Versão em negativo do lockup — a AppBar tem fundo escuro. */}
-          <Box sx={{ display: { xs: "none", md: "block" } }}>
-            <Logo tone="dark" size={24} />
+          {/*
+            No desktop é o contrário: a logo vem primeiro e o hambúrguer fecha a
+            coluna, encostado na borda da gaveta que ele controla. Assim o botão
+            fica em cima do menu, e não empurrando a marca para o meio da barra.
+          */}
+          <Box
+            sx={{
+              display: { xs: "none", md: "flex" },
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 1,
+              // Desconta o padding do Toolbar para o botão cair exatamente na
+              // linha divisória da gaveta.
+              width: `calc(${recolhido ? DRAWER_WIDTH_MINI : DRAWER_WIDTH}px - 24px)`,
+              transition: (t) =>
+                t.transitions.create("width", {
+                  easing: t.transitions.easing.sharp,
+                  duration: t.transitions.duration.shorter,
+                }),
+            }}
+          >
+            {/* Some quando recolhido: em 64px não cabe logo e botão. */}
+            {!recolhido && <Logo tone="dark" size={24} />}
+            <IconButton
+              color="inherit"
+              onClick={() => setRecolhido(!recolhido)}
+              aria-label={recolhido ? "Expandir menu" : "Recolher menu"}
+              sx={{ ml: recolhido ? "auto" : 0, mr: recolhido ? "auto" : 0 }}
+            >
+              <MenuIcon size={22} />
+            </IconButton>
           </Box>
 
           <Box sx={{ flex: 1 }} />

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 
 import { db } from "@/db";
 import { users, vacationRequests } from "@/db/schema";
@@ -10,14 +10,17 @@ import { listVacationStatus } from "@/server/vacation-deadlines";
 import { askForJson, parseJsonLoose } from "./ai-client";
 
 /**
- * Parecer de risco e planejamento de férias — do quadro inteiro, não de uma
- * pessoa por vez.
+ * Parecer de risco e planejamento de férias, em dois recortes.
  *
- * O agente de solicitação responde "pode ou não pode" sobre UMA data. A
- * pergunta que falta é de carteira: onde está o passivo, quem precisa entrar
- * na fila primeiro, e que meses já estão sobrecarregados. Um parecer por
- * pessoa respondia a pergunta errada — o RH não decide colaborador a
- * colaborador, decide a ordem de ataque.
+ *   - INDIVIDUAL: o dossiê de uma pessoa — histórico, saldo, prazo, agenda da
+ *     equipe e pendências operacionais.
+ *   - GERAL: a carteira inteira, COMPILADA a partir dos mesmos dossiês.
+ *
+ * O geral não é um resumo da tabela da tela. Ele monta o dossiê completo de
+ * cada pessoa em risco e pede ao modelo que compile — foi assim que ele deixou
+ * de sair genérico. Um parecer de carteira alimentado só por contagens produz
+ * conselho de manual; alimentado pelos dossiês, produz ordem de ataque com
+ * nome, número e data.
  *
  * Escopo pelo papel: RH vê a empresa, gestor vê a própria equipe. É o mesmo
  * recorte da tela de vencimento, para os dois nunca discordarem.
@@ -29,7 +32,7 @@ import { askForJson, parseJsonLoose } from "./ai-client";
 export type Acao = {
   /** O que fazer, em uma frase imperativa. */
   oQue: string;
-  /** Quem é afetado, quando a ação for sobre pessoas específicas. */
+  /** Quem é afetado. Vazio quando a ação é da área, não de uma pessoa. */
   quem: string[];
   /** Data-limite no formato brasileiro, ou null quando não há prazo duro. */
   ateQuando: string | null;
@@ -44,17 +47,33 @@ export type Parecer = {
   fromModel: boolean;
 };
 
-type PessoaEmRisco = {
+/** Dossiê de uma pessoa — a unidade de análise dos dois pareceres. */
+export type FatosPessoa = {
   nome: string;
   setor: string | null;
+  cargo: string | null;
+  admissao: string;
   gestor: string | null;
-  situacao: string;
-  prazo: string;
+  situacao: "vencida" | "crítica" | "atenção" | "em dia";
+  periodoPreso: { inicio: string; fim: string };
+  prazoDeConcessao: string;
   diasAteOPrazo: number;
+  diasUsufruidos: number;
   saldoEmAberto: number;
-  jaMarcou: boolean;
   /** Última data em que ainda dá para solicitar cumprindo a antecedência. */
   ultimaDataParaSolicitar: string | null;
+  jaTemFeriasMarcadas: boolean;
+  historico: {
+    inicio: string;
+    fim: string;
+    dias: number;
+    abono: number;
+    status: string;
+    cancelada: boolean;
+  }[];
+  cancelamentos: number;
+  equipeNoMesmoPeriodo: { nome: string; inicio: string; fim: string }[];
+  pendencias: string[];
 };
 
 export type FatosGerais = {
@@ -66,52 +85,80 @@ export type FatosGerais = {
   emDia: number;
   /** Soma dos dias em aberto de quem está vencido ou crítico. */
   diasEmRiscoDeDobra: number;
-  pessoas: PessoaEmRisco[];
+  /** Dossiê completo de cada pessoa fora do "em dia". */
+  dossies: FatosPessoa[];
   /** Férias aprovadas à frente, agrupadas por mês — mostra concentração. */
   concentracaoPorMes: { mes: string; pessoas: string[] }[];
-  pendenciasOperacionais: string[];
 };
 
-const SYSTEM_PROMPT = `Você é analista sênior de RH da 01 Tecnologia e escreve o parecer
-de risco da carteira de férias para o time de RH e para gestores.
+/**
+ * Teto de dossiês enviados ao modelo.
+ *
+ * Não é limite de risco: quem passar do teto continua contado nas estatísticas
+ * e no parecer determinístico. É limite de CONTEXTO — mandar cinquenta
+ * históricos completos degrada a resposta em vez de melhorá-la.
+ */
+const MAX_DOSSIES = 12;
 
-Você recebe FATOS já apurados de forma determinística pelo sistema.
+const REGRAS_COMUNS = `Você recebe FATOS já apurados de forma determinística pelo sistema.
 
 REGRAS INEGOCIÁVEIS:
 1. Nunca recalcule datas, dias, saldo ou prazos. Os números do JSON são a verdade.
 2. Não invente informação que não esteja nos fatos.
-3. Toda ação recomendada precisa ser concreta e verificável, e dizer QUEM ela
-   envolve. "Acompanhar de perto" não é ação; "combinar as datas dos 30 dias de
-   Larissa até 02/04/2026" é.
-4. Priorize. O parecer serve para decidir a ORDEM DE ATAQUE, não para listar
-   tudo que existe. Comece pelo que custa dinheiro mais cedo.
-5. O risco central é o art. 137 da CLT: passar do período concessivo obriga a
-   empresa a pagar as férias em dobro.
-6. Concentração de férias no mesmo mês é risco de operação, não risco legal —
-   trate como tal.
-7. Escreva para quem decide, não para quem audita.
-8. NUNCA comente sobre os dados que recebeu. Frases como "os fatos não trazem
-   detalhe individual" ou "seria preciso mais informação" falam do sistema, não
-   da carteira, e quem lê não tem o que fazer com isso.
-9. Carteira sem problema é resultado legítimo. Se não houver risco, devolva
-   "riscos" e "acoes" como listas VAZIAS e diga no resumo que está tudo em dia.
-   Não invente risco genérico ("pode haver concentração no futuro") só para
-   preencher — parecer que alarma sem motivo deixa de ser levado a sério.
+3. Toda ação recomendada precisa ser concreta e verificável. "Acompanhar de
+   perto" não é ação; "combinar as datas dos 16 dias restantes até 05/07/2026" é.
+4. O risco central é o art. 137 da CLT: passar do período concessivo obriga a
+   empresa a pagar as férias em dobro. Prazo vencido, ou vencendo com saldo em
+   aberto e sem férias marcadas, é sempre risco alto.
+5. Concentração de férias no mesmo mês é risco de OPERAÇÃO, não risco legal.
+6. Cancelamentos repetidos indicam planejamento que não se sustenta — trate
+   como sinal, não como falta.
+7. NUNCA comente sobre os dados que recebeu. Frases como "seria preciso mais
+   informação" falam do sistema, não das pessoas.
+8. Situação sem problema é resultado legítimo. Sem risco, devolva "riscos" e
+   "acoes" VAZIOS e diga no resumo que está em dia. Não invente risco genérico
+   para preencher — parecer que alarma sem motivo deixa de ser levado a sério.
+9. Escreva para quem decide, não para quem audita. Sem juridiquês desnecessário.`;
 
-CLASSIFICAÇÃO DO RISCO GERAL:
-- "alto": existe prazo já vencido, ou vencendo em menos de 30 dias sem férias
-  marcadas que resolvam.
-- "medio": prazos se aproximando, ou concentração relevante num mesmo mês.
-- "baixo": carteira sob controle.
-
-FORMATO — responda SOMENTE com um objeto JSON, sem markdown e sem cercas:
+const FORMATO = `FORMATO — responda SOMENTE com um objeto JSON, sem markdown e sem cercas:
 {
   "risco": "alto" | "medio" | "baixo",
   "resumo": "2 a 4 frases em português do Brasil, com os números que importam",
   "riscos": ["cada item uma frase completa"],
   "acoes": [{ "oQue": "frase imperativa", "quem": ["Nome"], "ateQuando": "DD/MM/AAAA ou null" }]
-}
-Use no máximo 5 riscos e 5 ações, em ordem de prioridade.`;
+}`;
+
+const PROMPT_INDIVIDUAL = `Você é analista sênior de RH da 01 Tecnologia e escreve o
+parecer de férias de UMA pessoa, para o RH e para o gestor dela.
+
+${REGRAS_COMUNS}
+
+Aprofunde: use o histórico, os cancelamentos e a agenda da equipe para explicar
+COMO a pessoa chegou nesta situação e o que precisa ser combinado.
+
+${FORMATO}
+Use no máximo 4 riscos e 4 ações.`;
+
+const PROMPT_GERAL = `Você é analista sênior de RH da 01 Tecnologia e escreve o parecer
+de risco da CARTEIRA de férias, para o RH e para gestores.
+
+Você recebe o DOSSIÊ COMPLETO de cada pessoa fora da situação "em dia": o
+histórico, os cancelamentos, o prazo, o saldo e a agenda da equipe. Analise
+pessoa por pessoa e então COMPILE.
+
+${REGRAS_COMUNS}
+10. Priorize. O parecer serve para decidir a ORDEM DE ATAQUE. Comece pelo que
+    custa dinheiro mais cedo, e ordene as ações por urgência real, não pela
+    ordem em que as pessoas aparecem.
+11. Cada risco deve citar a PESSOA e o NÚMERO que o sustenta. "Há casos
+    vencidos" não serve; "Larissa acumula 30 dias vencidos desde 12/05/2026,
+    sem nada marcado" serve.
+12. Se o histórico de alguém explicar o problema — cancelamentos seguidos,
+    período nunca usufruído, segundo ciclo aquisitivo fechando por cima do
+    primeiro —, diga isso. É o que a tabela da tela não mostra.
+
+${FORMATO}
+Use no máximo 6 riscos e 6 ações, em ordem de prioridade.`;
 
 const ROTULO_SITUACAO = {
   expired: "vencida",
@@ -120,7 +167,129 @@ const ROTULO_SITUACAO = {
   ok: "em dia",
 } as const;
 
-/** Apura o quadro completo dentro do escopo de quem pediu. */
+/* ------------------------------------------------------------------ */
+/* Apuração                                                            */
+/* ------------------------------------------------------------------ */
+
+type LinhaStatus = Awaited<ReturnType<typeof listVacationStatus>>[number];
+
+/**
+ * Monta o dossiê de uma pessoa a partir da linha já calculada pela tela de
+ * vencimento, evitando recalcular prazo e saldo por outro caminho.
+ */
+async function montarDossie(
+  s: LinhaStatus,
+  todayISO: string,
+): Promise<FatosPessoa> {
+  const [pessoa] = await db
+    .select({ position: users.position })
+    .from(users)
+    .where(eq(users.id, s.userId))
+    .limit(1);
+
+  const solicitacoes = await db
+    .select({
+      startDate: vacationRequests.startDate,
+      endDate: vacationRequests.endDate,
+      days: vacationRequests.days,
+      abonoDays: vacationRequests.abonoDays,
+      status: vacationRequests.status,
+      cancelledAt: vacationRequests.cancelledAt,
+      paidAt: vacationRequests.paidAt,
+      receiptSignedAt: vacationRequests.receiptSignedAt,
+      paymentDueDate: vacationRequests.paymentDueDate,
+    })
+    .from(vacationRequests)
+    .where(eq(vacationRequests.userId, s.userId))
+    .orderBy(vacationRequests.startDate);
+
+  const equipe = s.managerId
+    ? await db
+        .select({
+          nome: users.name,
+          inicio: vacationRequests.startDate,
+          fim: vacationRequests.endDate,
+        })
+        .from(vacationRequests)
+        .innerJoin(users, eq(users.id, vacationRequests.userId))
+        .where(
+          and(
+            eq(users.managerId, s.managerId),
+            ne(vacationRequests.userId, s.userId),
+            eq(vacationRequests.status, "approved"),
+            isNull(vacationRequests.cancelledAt),
+          ),
+        )
+    : [];
+
+  const pendencias: string[] = [];
+  for (const r of solicitacoes) {
+    if (r.status !== "approved" || r.cancelledAt) continue;
+    if (r.startDate < todayISO) continue;
+    if (r.paymentDueDate && !r.paidAt) {
+      pendencias.push(
+        `Férias de ${formatBR(r.startDate)}: pagamento em aberto, limite ${formatBR(r.paymentDueDate)}.`,
+      );
+    }
+    if (!r.receiptSignedAt) {
+      pendencias.push(
+        `Férias de ${formatBR(r.startDate)}: recibo ainda sem assinatura registrada.`,
+      );
+    }
+  }
+
+  return {
+    nome: s.name,
+    setor: s.sector,
+    cargo: pessoa?.position ?? null,
+    admissao: formatBR(s.admissionDate),
+    gestor: s.managerName,
+    situacao: ROTULO_SITUACAO[s.severity],
+    periodoPreso: {
+      inicio: formatBR(s.deadline.acquisitive.start),
+      fim: formatBR(s.deadline.acquisitive.end),
+    },
+    prazoDeConcessao: formatBR(s.deadline.concessiveEnd),
+    diasAteOPrazo: s.deadline.daysUntilDeadline,
+    diasUsufruidos: s.daysTaken,
+    saldoEmAberto: s.daysRemaining,
+    // Recuar a antecedência a partir do prazo dá a data em que a conversa
+    // precisa acontecer — que é o número acionável, não o prazo em si.
+    ultimaDataParaSolicitar: s.deadline.settled
+      ? null
+      : formatBR(addDays(s.deadline.concessiveEnd, -COMPANY_NOTICE_DAYS)),
+    jaTemFeriasMarcadas: s.hasScheduled,
+    historico: solicitacoes.map((r) => ({
+      inicio: formatBR(r.startDate),
+      fim: formatBR(r.endDate),
+      dias: r.days,
+      abono: r.abonoDays,
+      status: r.status,
+      cancelada: r.cancelledAt !== null,
+    })),
+    cancelamentos: solicitacoes.filter((r) => r.cancelledAt).length,
+    equipeNoMesmoPeriodo: equipe
+      .filter((t) => t.fim >= todayISO)
+      .map((t) => ({
+        nome: t.nome,
+        inicio: formatBR(t.inicio),
+        fim: formatBR(t.fim),
+      })),
+    pendencias,
+  };
+}
+
+export async function reunirFatosPessoa(
+  userId: string,
+  todayISO: string = new Date().toISOString().slice(0, 10),
+): Promise<FatosPessoa | null> {
+  const linha = (await listVacationStatus(todayISO)).find(
+    (s) => s.userId === userId,
+  );
+  if (!linha) return null;
+  return montarDossie(linha, todayISO);
+}
+
 export async function reunirFatosGerais(
   solicitante: { id: string; role: string },
   todayISO: string = new Date().toISOString().slice(0, 10),
@@ -131,25 +300,18 @@ export async function reunirFatosGerais(
     ? todos
     : todos.filter((s) => s.managerId === solicitante.id);
 
-  const pessoas: PessoaEmRisco[] = status
-    // Quem está em dia não ajuda a decidir a ordem de ataque e só gasta
-    // contexto do modelo. A contagem de "em dia" continua no resumo.
+  // Só quem tem algo a resolver ganha dossiê. Quem está em dia continua nas
+  // contagens; mandar o histórico dele ao modelo é contexto sem retorno.
+  const emRisco = status
     .filter((s) => s.severity !== "ok")
-    .map((s) => ({
-      nome: s.name,
-      setor: s.sector,
-      gestor: s.managerName,
-      situacao: ROTULO_SITUACAO[s.severity],
-      prazo: formatBR(s.deadline.concessiveEnd),
-      diasAteOPrazo: s.deadline.daysUntilDeadline,
-      saldoEmAberto: s.daysRemaining,
-      jaMarcou: s.hasScheduled,
-      ultimaDataParaSolicitar: s.deadline.settled
-        ? null
-        : formatBR(addDays(s.deadline.concessiveEnd, -COMPANY_NOTICE_DAYS)),
-    }));
+    .sort((a, b) => a.deadline.daysUntilDeadline - b.deadline.daysUntilDeadline)
+    .slice(0, MAX_DOSSIES);
 
-  // Concentração: quantas pessoas do escopo saem em cada mês à frente.
+  const dossies = await Promise.all(
+    emRisco.map((s) => montarDossie(s, todayISO)),
+  );
+
+  // Concentração por mês: risco de operação, não legal.
   const idsDoEscopo = new Set(status.map((s) => s.userId));
   const aprovadas = await db
     .select({
@@ -157,9 +319,6 @@ export async function reunirFatosGerais(
       userId: vacationRequests.userId,
       inicio: vacationRequests.startDate,
       fim: vacationRequests.endDate,
-      paymentDueDate: vacationRequests.paymentDueDate,
-      paidAt: vacationRequests.paidAt,
-      receiptSignedAt: vacationRequests.receiptSignedAt,
     })
     .from(vacationRequests)
     .innerJoin(users, eq(users.id, vacationRequests.userId))
@@ -170,31 +329,11 @@ export async function reunirFatosGerais(
       ),
     );
 
-  const doEscopo = aprovadas.filter(
-    (a) => idsDoEscopo.has(a.userId) && a.fim >= todayISO,
-  );
-
   const porMes = new Map<string, string[]>();
-  for (const a of doEscopo) {
+  for (const a of aprovadas) {
+    if (!idsDoEscopo.has(a.userId) || a.fim < todayISO) continue;
     const mes = a.inicio.slice(0, 7);
     porMes.set(mes, [...(porMes.get(mes) ?? []), a.nome]);
-  }
-
-  const pendenciasOperacionais: string[] = [];
-  if (ehRH) {
-    for (const a of doEscopo) {
-      if (a.inicio < todayISO) continue;
-      if (a.paymentDueDate && !a.paidAt) {
-        pendenciasOperacionais.push(
-          `${a.nome}: férias em ${formatBR(a.inicio)} com pagamento em aberto, limite ${formatBR(a.paymentDueDate)}.`,
-        );
-      }
-      if (!a.receiptSignedAt) {
-        pendenciasOperacionais.push(
-          `${a.nome}: recibo das férias de ${formatBR(a.inicio)} ainda sem assinatura.`,
-        );
-      }
-    }
   }
 
   return {
@@ -207,83 +346,81 @@ export async function reunirFatosGerais(
     diasEmRiscoDeDobra: status
       .filter((s) => s.severity === "expired" || s.severity === "critical")
       .reduce((soma, s) => soma + s.daysRemaining, 0),
-    pessoas,
+    dossies,
     concentracaoPorMes: [...porMes.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([mes, nomes]) => ({
         mes: `${mes.slice(5)}/${mes.slice(0, 4)}`,
         pessoas: nomes,
       })),
-    pendenciasOperacionais,
   };
 }
 
-/**
- * Parecer sem modelo — o mesmo papel do `deterministicVerdict` do agente.
- *
- * Não é texto de desculpa: é o parecer que os próprios números sustentam. Uma
- * tela de RH não pode ficar em branco porque um serviço externo caiu.
- */
-function parecerDeterministico(f: FatosGerais): Parecer {
+/* ------------------------------------------------------------------ */
+/* Caminho determinístico — o parecer que os números sustentam sozinhos */
+/* ------------------------------------------------------------------ */
+
+function riscosDoDossie(d: FatosPessoa): { riscos: string[]; acoes: Acao[] } {
   const riscos: string[] = [];
   const acoes: Acao[] = [];
-  let risco: Parecer["risco"] = "baixo";
 
-  const vencidas = f.pessoas.filter((p) => p.situacao === "vencida");
-  const criticas = f.pessoas.filter((p) => p.situacao === "crítica");
-
-  if (vencidas.length > 0) {
-    risco = "alto";
+  if (d.situacao === "vencida") {
     riscos.push(
-      `${vencidas.length} pessoa(s) com o período concessivo já vencido, somando ` +
-        `${vencidas.reduce((s, p) => s + p.saldoEmAberto, 0)} dia(s) sujeitos a ` +
-        `pagamento em dobro (art. 137 da CLT).`,
+      `${d.nome}: o período de ${d.periodoPreso.inicio} a ${d.periodoPreso.fim} ` +
+        `deveria ter sido concedido até ${d.prazoDeConcessao} e o prazo passou. ` +
+        `Restam ${d.saldoEmAberto} dia(s), sujeitos a pagamento em dobro (art. 137).`,
     );
     acoes.push({
-      oQue: "Agendar imediatamente os dias vencidos e apurar com a folha o que já é devido em dobro",
-      quem: vencidas.map((p) => p.nome),
+      oQue: `Agendar os ${d.saldoEmAberto} dia(s) vencidos e apurar com a folha o que já é devido em dobro`,
+      quem: [d.nome, ...(d.gestor ? [d.gestor] : [])],
       ateQuando: null,
     });
-  }
-
-  if (criticas.length > 0) {
-    if (risco === "baixo") risco = "alto";
+  } else if (d.situacao === "crítica" || d.situacao === "atenção") {
     riscos.push(
-      `${criticas.length} pessoa(s) a menos de 30 dias do prazo de concessão.`,
+      `${d.nome}: faltam ${d.diasAteOPrazo} dia(s) para o prazo de ` +
+        `${d.prazoDeConcessao}, com ${d.saldoEmAberto} dia(s) em aberto` +
+        (d.jaTemFeriasMarcadas ? " (já há férias marcadas)." : " e nada marcado."),
     );
-    for (const p of criticas.filter((p) => !p.jaMarcou).slice(0, 3)) {
+    if (!d.jaTemFeriasMarcadas) {
       acoes.push({
-        oQue: `Combinar as datas dos ${p.saldoEmAberto} dia(s) em aberto`,
-        quem: [p.nome],
-        ateQuando: p.ultimaDataParaSolicitar,
+        oQue: `Combinar as datas dos ${d.saldoEmAberto} dia(s) em aberto`,
+        quem: [d.nome],
+        ateQuando: d.ultimaDataParaSolicitar,
       });
     }
   }
 
-  if (f.atencao > 0 && risco === "baixo") risco = "medio";
-  if (f.atencao > 0) {
-    riscos.push(`${f.atencao} pessoa(s) com prazo entre 30 e 90 dias.`);
+  if (d.cancelamentos >= 2) {
+    riscos.push(
+      `${d.nome}: ${d.cancelamentos} solicitações canceladas — o planejamento não está se sustentando.`,
+    );
   }
 
-  const cheios = f.concentracaoPorMes.filter((m) => m.pessoas.length >= 3);
-  for (const m of cheios) {
-    if (risco === "baixo") risco = "medio";
+  for (const p of d.pendencias) riscos.push(`${d.nome}: ${p.toLowerCase()}`);
+
+  return { riscos, acoes };
+}
+
+function parecerDeterministico(f: FatosGerais): Parecer {
+  const riscos: string[] = [];
+  const acoes: Acao[] = [];
+
+  // Vencidos primeiro, depois críticos — a mesma ordem de prioridade que o
+  // modelo receberia como instrução.
+  for (const d of f.dossies) {
+    const r = riscosDoDossie(d);
+    riscos.push(...r.riscos);
+    acoes.push(...r.acoes);
+  }
+
+  for (const m of f.concentracaoPorMes.filter((m) => m.pessoas.length >= 3)) {
     riscos.push(
       `${m.pessoas.length} pessoas de férias em ${m.mes}: ${m.pessoas.join(", ")}.`,
     );
   }
 
-  if (f.pendenciasOperacionais.length > 0) {
-    if (risco === "baixo") risco = "medio";
-    riscos.push(
-      `${f.pendenciasOperacionais.length} pendência(s) de recibo ou pagamento antes do início das férias.`,
-    );
-    acoes.push({
-      oQue: "Regularizar recibo e pagamento antes do início (art. 145)",
-      quem: [],
-      ateQuando: null,
-    });
-  }
+  const risco: Parecer["risco"] =
+    f.vencidas > 0 || f.criticas > 0 ? "alto" : riscos.length > 0 ? "medio" : "baixo";
 
   const resumo =
     riscos.length === 0
@@ -292,35 +429,55 @@ function parecerDeterministico(f: FatosGerais): Parecer {
         `${f.criticas} crítica(s) e ${f.atencao} em atenção. ` +
         `${f.diasEmRiscoDeDobra} dia(s) correm risco de pagamento em dobro.`;
 
-  return { risco, resumo, riscos: riscos.slice(0, 5), acoes: acoes.slice(0, 5), fromModel: false };
+  return {
+    risco,
+    resumo,
+    riscos: riscos.slice(0, 6),
+    acoes: acoes.slice(0, 6),
+    fromModel: false,
+  };
 }
 
-export async function gerarParecerGeral(
-  solicitante: { id: string; role: string },
-  todayISO: string = new Date().toISOString().slice(0, 10),
-): Promise<{ fatos: FatosGerais; parecer: Parecer }> {
-  const fatos = await reunirFatosGerais(solicitante, todayISO);
+function parecerDeterministicoPessoa(d: FatosPessoa): Parecer {
+  const { riscos, acoes } = riscosDoDossie(d);
+  const risco: Parecer["risco"] =
+    d.situacao === "vencida" || d.situacao === "crítica"
+      ? "alto"
+      : riscos.length > 0
+        ? "medio"
+        : "baixo";
 
-  const resposta = await askForJson({
-    system: SYSTEM_PROMPT,
-    user: JSON.stringify({ hoje: todayISO, ...fatos }, null, 2),
-    maxTokens: 2000,
-  });
+  const resumo =
+    riscos.length === 0
+      ? `${d.nome} está com as férias em dia: ${d.diasUsufruidos} dia(s) usufruídos e nenhum prazo correndo.`
+      : `${d.nome} tem ${riscos.length} ponto(s) de atenção. ` +
+        (d.situacao === "vencida"
+          ? "O prazo de concessão já venceu — é o item mais caro da lista."
+          : `Prazo de concessão em ${d.prazoDeConcessao}.`);
 
-  if (!resposta) return { fatos, parecer: parecerDeterministico(fatos) };
+  return { risco, resumo, riscos, acoes, fromModel: false };
+}
 
-  const bruto = parseJsonLoose<{
-    risco?: string;
-    resumo?: string;
-    riscos?: string[];
-    acoes?: { oQue?: string; quem?: string[]; ateQuando?: string | null }[];
-  }>(resposta.text);
+/* ------------------------------------------------------------------ */
+/* Geração                                                             */
+/* ------------------------------------------------------------------ */
 
-  if (!bruto?.resumo) return { fatos, parecer: parecerDeterministico(fatos) };
+type Bruto = {
+  risco?: string;
+  resumo?: string;
+  riscos?: string[];
+  acoes?: { oQue?: string; quem?: string[]; ateQuando?: string | null }[];
+};
 
-  // O modelo escreve; a classificação de risco continua ancorada no cálculo.
-  // Prazo vencido é risco alto por definição, e não por opinião do modelo.
-  const base = parecerDeterministico(fatos);
+/**
+ * Aplica a resposta do modelo por cima do parecer calculado.
+ *
+ * O modelo escreve; a classificação de risco continua ancorada no cálculo.
+ * Prazo vencido é risco alto por definição, e não por opinião do modelo.
+ */
+function combinar(base: Parecer, bruto: Bruto | null, teto: number): Parecer {
+  if (!bruto?.resumo) return base;
+
   const risco =
     base.risco === "alto"
       ? "alto"
@@ -329,20 +486,53 @@ export async function gerarParecerGeral(
         : base.risco;
 
   return {
-    fatos,
-    parecer: {
-      risco,
-      resumo: bruto.resumo,
-      riscos: (bruto.riscos ?? []).filter((r) => typeof r === "string").slice(0, 5),
-      acoes: (bruto.acoes ?? [])
-        .filter((a) => a && typeof a.oQue === "string")
-        .slice(0, 5)
-        .map((a) => ({
-          oQue: a.oQue as string,
-          quem: Array.isArray(a.quem) ? a.quem.filter((q) => typeof q === "string") : [],
-          ateQuando: a.ateQuando ?? null,
-        })),
-      fromModel: true,
-    },
+    risco,
+    resumo: bruto.resumo,
+    riscos: (bruto.riscos ?? []).filter((r) => typeof r === "string").slice(0, teto),
+    acoes: (bruto.acoes ?? [])
+      .filter((a) => a && typeof a.oQue === "string")
+      .slice(0, teto)
+      .map((a) => ({
+        oQue: a.oQue as string,
+        quem: Array.isArray(a.quem) ? a.quem.filter((q) => typeof q === "string") : [],
+        ateQuando: a.ateQuando ?? null,
+      })),
+    fromModel: true,
   };
+}
+
+export async function gerarParecerGeral(
+  solicitante: { id: string; role: string },
+  todayISO: string = new Date().toISOString().slice(0, 10),
+): Promise<{ fatos: FatosGerais; parecer: Parecer }> {
+  const fatos = await reunirFatosGerais(solicitante, todayISO);
+  const base = parecerDeterministico(fatos);
+
+  const resposta = await askForJson({
+    system: PROMPT_GERAL,
+    user: JSON.stringify({ hoje: formatBR(todayISO), ...fatos }, null, 2),
+    maxTokens: 3000,
+  });
+
+  if (!resposta) return { fatos, parecer: base };
+  return { fatos, parecer: combinar(base, parseJsonLoose<Bruto>(resposta.text), 6) };
+}
+
+export async function gerarParecerIndividual(
+  userId: string,
+  todayISO: string = new Date().toISOString().slice(0, 10),
+): Promise<{ fatos: FatosPessoa; parecer: Parecer } | null> {
+  const fatos = await reunirFatosPessoa(userId, todayISO);
+  if (!fatos) return null;
+
+  const base = parecerDeterministicoPessoa(fatos);
+
+  const resposta = await askForJson({
+    system: PROMPT_INDIVIDUAL,
+    user: JSON.stringify({ hoje: formatBR(todayISO), ...fatos }, null, 2),
+    maxTokens: 2000,
+  });
+
+  if (!resposta) return { fatos, parecer: base };
+  return { fatos, parecer: combinar(base, parseJsonLoose<Bruto>(resposta.text), 4) };
 }

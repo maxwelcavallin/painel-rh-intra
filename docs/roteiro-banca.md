@@ -91,22 +91,29 @@ que é a que o RH faz de verdade: *por onde eu começo?*
 Ainda na tela de Vencimento de férias, clique em **Gerar parecer**, no canto
 superior direito.
 
-**O que observar:** o sistema cruza todos os prazos, o passivo somado em dias
-sujeitos a pagamento em dobro, a concentração de férias mês a mês e as
-pendências de recibo e pagamento — e devolve uma **lista priorizada, com nome e
-data em cada item**. Não é um resumo da tabela: é a ordem de ataque.
+**O que observar:** o sistema monta o **dossiê completo de cada pessoa em
+risco** — histórico de férias, cancelamentos, saldo, prazo, agenda da equipe e
+pendências de recibo e pagamento — e pede que a IA compile tudo numa **lista
+priorizada, com nome e data em cada item**. Não é um resumo da tabela: é a ordem
+de ataque.
 
-No cenário desta demonstração o parecer identifica que a empresa tem **60 dias
-já em risco de pagamento em dobro**, concentrados em duas pessoas, e recomenda,
-nesta ordem:
+No cenário desta demonstração o parecer identifica **60 dias já em risco de
+pagamento em dobro** e coloca o Bruno na frente da Larissa — porque o dela já
+está consumado e o dele ainda dá para evitar, faltando 9 dias.
 
-1. Fechar as datas da Larissa — 30 dias vencidos desde 12/05/2026
-2. Definir as do Bruno antes de 14/08/2026, prazo que vence em poucos dias
-3. Liberar o pagamento da Camila até 20/08/2026, antes do limite do art. 145
+O que impressiona é o que ele encontra fora da tabela:
 
-Ele também percebe o que a tabela não mostra: que um **segundo período
-aquisitivo** da Larissa já fechou, e que o passivo vira 60 dias na mesma pessoa
-se o primeiro não for resolvido agora.
+- **O padrão histórico do Bruno é sair em novembro.** Repetir isso em 2026
+  jogaria as férias para depois do prazo e consumaria a dobra.
+- **O Tiago sempre sai em janeiro**, o que colidiria com o prazo dele em outubro.
+- **A Patrícia estará de férias em agosto** — e é justamente a gestora que
+  precisa aprovar as férias da Larissa e do Tiago. O parecer recomenda definir
+  quem responde por Operações nesse período.
+
+Nada disso está na tela. Sai de cruzar histórico com prazo com agenda.
+
+**Para uma pessoa só**, clique no ícone ✨ ao final da linha dela — o mesmo
+parecer, focado num dossiê.
 
 **O escopo acompanha quem pediu.** O RH recebe o parecer da empresa; um gestor
 recebe o da própria equipe, com o mesmo recorte da tela. Entre como gestor e

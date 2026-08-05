@@ -17,7 +17,7 @@ import { requireManagerOrRH } from "@/lib/dal";
 import { formatBR } from "@/lib/clt";
 import { listVacationStatus } from "@/server/vacation-deadlines";
 
-import { ParecerButton } from "./parecer-button";
+import { ParecerGeralButton, ParecerPessoaButton } from "./parecer-button";
 
 export const metadata: Metadata = { title: "Vencimento de férias" };
 
@@ -64,7 +64,7 @@ export default async function VencimentosPage() {
           obriga a empresa a pagar em dobro (art. 137 da CLT).
         </Typography>
         </Stack>
-        <ParecerButton />
+        <ParecerGeralButton />
       </Stack>
 
       {urgentes.length > 0 ? (
@@ -92,6 +92,7 @@ export default async function VencimentosPage() {
                 <TableCell align="right">Prazo</TableCell>
                 <TableCell align="right">Saldo</TableCell>
                 <TableCell>Situação</TableCell>
+                <TableCell align="right" sx={{ width: 48 }} />
               </TableRow>
             </TableHead>
             <TableBody>
@@ -157,6 +158,9 @@ export default async function VencimentosPage() {
                         )}
                       </Stack>
                     </TableCell>
+                    <TableCell align="right" sx={{ width: 48 }}>
+                      <ParecerPessoaButton userId={s.userId} nome={s.name} />
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -169,9 +173,10 @@ export default async function VencimentosPage() {
         <Typography variant="caption" sx={{ color: "text.secondary" }}>
           Quem está vencido ou crítico recebe aviso automático na passada diária
           — colaborador e gestor. Quem já marcou férias sai da urgência.
-          O <strong>parecer</strong> cruza todos os prazos, saldos e a agenda dos
-          próximos meses para dizer por onde começar; os números vêm do cálculo
-          do sistema, não do modelo.
+          O <strong>parecer</strong> compila o histórico, o saldo, o prazo e a
+          agenda de cada pessoa para dizer por onde começar — pela carteira toda,
+          no botão do topo, ou de uma pessoa só, no ícone da linha. Os números
+          vêm do cálculo do sistema, não do modelo.
         </Typography>
       </Box>
     </Stack>
