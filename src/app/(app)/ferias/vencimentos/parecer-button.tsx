@@ -43,9 +43,14 @@ export function ParecerButton({
 
   return (
     <>
+      {/*
+        Contornado, e não texto: como última coluna de uma tabela de nove, um
+        botão de texto desaparece ao lado dos chips coloridos de situação — a
+        primeira versão ficou invisível na prática.
+      */}
       <Button
         size="small"
-        variant="text"
+        variant="outlined"
         onClick={abrir}
         startIcon={<Sparkles size={15} />}
         sx={{ textTransform: "none", whiteSpace: "nowrap" }}

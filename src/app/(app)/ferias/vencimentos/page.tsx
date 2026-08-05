@@ -56,7 +56,9 @@ export default async function VencimentosPage() {
             ? "Toda a empresa."
             : "Sua equipe direta."}{" "}
           O prazo que importa é o de <strong>concessão</strong>: passar dele
-          obriga a empresa a pagar em dobro (art. 137 da CLT).
+          obriga a empresa a pagar em dobro (art. 137 da CLT). Use o botão{" "}
+          <strong>Parecer</strong>, na última coluna, para uma análise de risco
+          e um plano de ação por pessoa.
         </Typography>
       </Stack>
 
@@ -85,7 +87,24 @@ export default async function VencimentosPage() {
                 <TableCell align="right">Prazo</TableCell>
                 <TableCell align="right">Saldo</TableCell>
                 <TableCell>Situação</TableCell>
-                <TableCell align="right">Análise</TableCell>
+                {/*
+                  Grudada na direita: com nove colunas a tabela rola na
+                  horizontal em tela de notebook, e a coluna de ação some
+                  justamente por ser a última.
+                */}
+                <TableCell
+                  align="right"
+                  sx={{
+                    position: "sticky",
+                    right: 0,
+                    bgcolor: "background.paper",
+                    borderLeft: "1px solid",
+                    borderLeftColor: "divider",
+                    zIndex: 3,
+                  }}
+                >
+                  Análise
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -151,7 +170,16 @@ export default async function VencimentosPage() {
                         )}
                       </Stack>
                     </TableCell>
-                    <TableCell align="right">
+                    <TableCell
+                      align="right"
+                      sx={{
+                        position: "sticky",
+                        right: 0,
+                        bgcolor: "background.paper",
+                        borderLeft: "1px solid",
+                        borderLeftColor: "divider",
+                      }}
+                    >
                       <ParecerButton userId={s.userId} nome={s.name} />
                     </TableCell>
                   </TableRow>
