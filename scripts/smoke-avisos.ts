@@ -2,7 +2,7 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 
 import { db } from "../src/db";
 import { broadcastDeliveries, broadcasts, notifications, users } from "../src/db/schema";
@@ -45,21 +45,57 @@ async function main() {
   if (!rh) throw new Error("Seed não encontrado. Rode `npm run db:seed`.");
 
   console.log("\n— Resolução de audiência");
+  /**
+   * O esperado vem do banco, não de número fixo.
+   *
+   * Este banco hospeda o seed de demonstração E a equipe real da 01 Tec, que
+   * entra e sai conforme quem está testando. O que a regra promete é o
+   * CRITÉRIO — "todo mundo do setor X" — e é isso que se verifica aqui.
+   */
+  const ativos = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      sector: users.sector,
+      role: users.role,
+      isCuritibaMetro: users.isCuritibaMetro,
+    })
+    .from(users)
+    .where(and(eq(users.isActive, true), ne(users.employmentStatus, "desligado")));
+
   const todos = await resolveAudience({ type: "all", value: null });
-  check("todos os ativos", todos.length, 7);
+  check("todos os ativos", todos.length, ativos.length);
 
   const tecnologia = await resolveAudience({ type: "sector", value: "Tecnologia" });
-  check("setor Tecnologia", tecnologia.length, 3);
+  check(
+    "setor Tecnologia",
+    tecnologia.length,
+    ativos.filter((u) => u.sector === "Tecnologia").length,
+  );
+  check(
+    "só gente de Tecnologia entrou",
+    tecnologia.every((t) => ativos.find((u) => u.id === t.id)?.sector === "Tecnologia"),
+    true,
+  );
 
   const gestores = await resolveAudience({ type: "role", value: "gestor" });
-  check("papel gestor", gestores.length, 2);
+  check("papel gestor", gestores.length, ativos.filter((u) => u.role === "gestor").length);
+  check(
+    "nenhum colaborador entrou como gestor",
+    gestores.every((g) => ativos.find((u) => u.id === g.id)?.role === "gestor"),
+    true,
+  );
 
   const rmc = await resolveAudience({ type: "location", value: "rmc" });
-  check("dentro da RMC (Patrícia mora em Blumenau)", rmc.length, 6);
-
   const foraRmc = await resolveAudience({ type: "location", value: "fora_rmc" });
-  check("fora da RMC", foraRmc.length, 1);
-  check("é a Patrícia", foraRmc[0]?.name.startsWith("Patrícia"), true);
+  check("dentro da RMC", rmc.length, ativos.filter((u) => u.isCuritibaMetro).length);
+  check("fora da RMC", foraRmc.length, ativos.filter((u) => !u.isCuritibaMetro).length);
+  check("as duas metades somam o total", rmc.length + foraRmc.length, ativos.length);
+  check(
+    "ninguém aparece nas duas",
+    rmc.some((r) => foraRmc.some((f) => f.id === r.id)),
+    false,
+  );
 
   console.log("\n— Audiência sem valor não vira 'todo mundo'");
   // Um bug clássico: setor não escolhido caindo no fallback e avisando a empresa.
@@ -92,10 +128,14 @@ async function main() {
   });
   check("enviado", soInApp.ok, true);
   if (!soInApp.ok) throw new Error(soInApp.error);
-  check("3 destinatários", soInApp.recipients, 3);
+  check("um destinatário por pessoa do setor", soInApp.recipients, tecnologia.length);
 
   const depois = await db.select({ id: notifications.id }).from(notifications);
-  check("criou 3 notificações in-app", depois.length - antes.length, 3);
+  check(
+    "uma notificação in-app por destinatário",
+    depois.length - antes.length,
+    tecnologia.length,
+  );
 
   const semEntregas = await getBroadcastDeliveries(soInApp.id);
   check("nenhuma entrega externa registrada", semEntregas.length, 0);
@@ -112,7 +152,7 @@ async function main() {
   if (!comWhats.ok) throw new Error(comWhats.error);
 
   const entregasWhats = await getBroadcastDeliveries(comWhats.id);
-  check("2 entregas (uma por gestor)", entregasWhats.length, 2);
+  check("uma entrega por gestor", entregasWhats.length, gestores.length);
   check("todas nominais", entregasWhats.every((e) => e.recipientName !== null), true);
   check("canal correto", entregasWhats.every((e) => e.channel === "whatsapp"), true);
 

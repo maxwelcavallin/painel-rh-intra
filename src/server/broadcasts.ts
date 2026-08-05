@@ -125,6 +125,7 @@ export async function createAndSendBroadcast(params: {
           phone,
           name: r.name.split(" ")[0],
           message: `${title}\n\n${body}`,
+          extra: { titulo: title },
         });
 
         if (sent.ok) return { userId: r.id, status: "sent" as const, error: null };

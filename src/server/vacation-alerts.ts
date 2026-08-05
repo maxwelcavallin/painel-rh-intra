@@ -92,6 +92,11 @@ export async function notifyPaymentDeadlines(
               `e o pagamento ${urgencia} (limite: ${formatBR(row.paymentDueDate)}). ` +
               `O art. 145 da CLT exige o pagamento até 2 dias úteis antes do início.`,
             link: "/ferias/controle",
+            extra: {
+              colaborador: row.employeeName,
+              inicio: formatBR(row.startDate),
+              prazo: formatBR(row.paymentDueDate),
+            },
           });
           report.notified++;
         }
@@ -113,6 +118,11 @@ export async function notifyPaymentDeadlines(
             `Suas férias começam em ${formatBR(row.startDate)} e o recibo ainda ` +
             `não foi assinado. Procure o RH para regularizar antes de sair.`,
           link: "/ferias/minhas",
+          extra: {
+            colaborador: row.employeeName,
+            inicio: formatBR(row.startDate),
+            sujeito: "das suas férias",
+          },
         });
         report.notified++;
 
@@ -125,6 +135,11 @@ export async function notifyPaymentDeadlines(
               `${row.employeeName} inicia férias em ${formatBR(row.startDate)} ` +
               `e o recibo ainda não foi assinado.`,
             link: "/ferias/controle",
+            extra: {
+              colaborador: row.employeeName,
+              inicio: formatBR(row.startDate),
+              sujeito: `das férias de ${row.employeeName}`,
+            },
           });
           report.notified++;
         }

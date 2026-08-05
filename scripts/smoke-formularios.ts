@@ -7,6 +7,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/db";
 import { formResponses, forms, notifications, users } from "../src/db/schema";
 import type { FormQuestion } from "../src/db/schema";
+import { resolveAudience } from "../src/server/audience";
 import {
   createForm,
   getScoreboard,
@@ -59,7 +60,6 @@ async function main() {
   const gestorOps = await pessoa("patricia.gestora@01tecnologia.demo");
   const bruno = await pessoa("bruno.rocha@01tecnologia.demo");
   const camila = await pessoa("camila.duarte@01tecnologia.demo");
-  const tiago = await pessoa("tiago.lins@01tecnologia.demo");
 
   console.log("\n— Validação das perguntas");
   check("lista vazia rejeitada", validateQuestions([]), "Adicione ao menos uma pergunta.");
@@ -88,7 +88,19 @@ async function main() {
   });
   check("criado", criado.ok, true);
   if (!criado.ok) throw new Error(criado.error);
-  check("4 colaboradores na audiência", criado.recipients, 4);
+
+  /**
+   * A audiência é por PAPEL, então alcança todo colaborador ativo do banco —
+   * o seed de demonstração e também a equipe real da 01 Tec, que entra e sai
+   * conforme quem está testando. Número fixo aqui quebra a cada cadastro novo;
+   * o teste passa a trabalhar sobre a audiência que de fato foi resolvida.
+   */
+  const audiencia = await resolveAudience({ type: "role", value: "user" });
+  check("todo colaborador ativo entra na audiência", criado.recipients, audiencia.length);
+  check("Bruno e Camila estão nela",
+    [bruno.id, camila.id].every((id) => audiencia.some((a) => a.id === id)),
+    true,
+  );
 
   console.log("\n— Visibilidade");
   const doBruno = await listFormsForUser(bruno.id);
@@ -141,7 +153,7 @@ async function main() {
   console.log("\n— Placar");
   const geral = await getScoreboard(criado.id, null);
   check("2 responderam", geral?.responded.length, 2);
-  check("2 faltando", geral?.missing.length, 2);
+  check("o resto da audiência está faltando", geral?.missing.length, audiencia.length - 2);
 
   console.log("\n— Escopo do gestor: só a própria equipe");
   const placarTec = await getScoreboard(criado.id, gestorTec.id);
@@ -175,21 +187,39 @@ async function main() {
     .set({ createdAt: new Date(Date.now() - 72 * 3_600_000) })
     .where(eq(forms.id, criado.id));
 
+  // Quem falta, e sob qual gestor — calculado do banco, não decorado.
+  const faltantes = audiencia.filter((a) => a.id !== bruno.id && a.id !== camila.id);
+  const comGestor = await db
+    .select({ id: users.id, managerId: users.managerId })
+    .from(users)
+    .where(inArray(users.id, faltantes.map((f) => f.id)));
+  const gestoresACobrar = new Set(
+    comGestor.map((c) => c.managerId).filter((m): m is string => m !== null),
+  );
+
   const vencido = await sendPendingReminders();
   check("1 formulário vencido", vencido.formsOverdue, 1);
-  check("2 pessoas pendentes", vencido.peoplePending, 2);
-  check("1 gestor avisado (só a Patrícia tem faltantes)", vencido.managersNotified, 1);
-  check("é a Patrícia", vencido.details[0]?.manager.startsWith("Patrícia"), true);
-  check("com os dois nomes numa mensagem só", vencido.details[0]?.pending.length, 2);
+  check("todos os faltantes contados", vencido.peoplePending, faltantes.length);
+  check("um aviso por gestor com faltantes", vencido.managersNotified, gestoresACobrar.size);
+  check(
+    "cada gestor recebe UMA mensagem consolidada",
+    vencido.details.every((d) => d.pending.length >= 1),
+    true,
+  );
+  check(
+    "a soma dos pendentes bate com quem falta",
+    vencido.details.reduce((s, d) => s + d.pending.length, 0),
+    faltantes.length,
+  );
 
   console.log("\n— Não recobra dentro da mesma janela");
   const denovo = await sendPendingReminders();
   check("segunda passada não cobra de novo", denovo.managersNotified, 0);
 
   console.log("\n— Depois que todos respondem, para de cobrar");
-  await submitResponse({ formId: criado.id, userId: tiago.id, answers: { q1: "12/12" } });
-  const larissa = await pessoa("larissa.peixoto@01tecnologia.demo");
-  await submitResponse({ formId: criado.id, userId: larissa.id, answers: { q1: "12/12" } });
+  for (const quem of faltantes) {
+    await submitResponse({ formId: criado.id, userId: quem.id, answers: { q1: "12/12" } });
+  }
   await db
     .update(forms)
     .set({ lastReminderAt: null, createdAt: new Date(Date.now() - 72 * 3_600_000) })
@@ -199,7 +229,7 @@ async function main() {
   check("ninguém mais a cobrar", completo.managersNotified, 0);
 
   const placarFinal = await getScoreboard(criado.id, null);
-  check("4 de 4 responderam", placarFinal?.responded.length, 4);
+  check("audiência inteira respondeu", placarFinal?.responded.length, audiencia.length);
   check("0 faltando", placarFinal?.missing.length, 0);
 
   // Limpeza

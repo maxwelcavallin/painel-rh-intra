@@ -98,6 +98,20 @@ export async function createVacationRequest(params: {
     .returning({ id: vacationRequests.id });
 
   const period = `${formatBR(startDate)} a ${formatBR(endDate)}`;
+
+  /**
+   * Campos que o template da Zaia monta sozinho, além de nome/mensagem.
+   *
+   * Só nome, datas e contagens entram aqui — CPF, RG, endereço e telefone de
+   * terceiros nunca trafegam no corpo da mensagem.
+   */
+  const camposZaia = {
+    colaborador: facts.employee.name,
+    inicio: formatBR(startDate),
+    fim: formatBR(endDate),
+    dias: String(facts.request.days),
+  };
+
   const extras = [
     abonoDays > 0 ? `${abonoDays} dia(s) de abono pecuniário` : null,
     advance13th ? "com antecipação do 13º" : null,
@@ -114,6 +128,7 @@ export async function createVacationRequest(params: {
         `Sua solicitação de férias (${period}) foi reprovada automaticamente. ` +
         `${verdict.reasoning} Fale com o RH se precisar de ajuda para reagendar.`,
       link: "/ferias/minhas",
+      extra: { ...camposZaia, decisao: "reprovadas" },
     });
   } else {
     const [employee] = await db
@@ -132,6 +147,7 @@ export async function createVacationRequest(params: {
           `(${facts.request.days} dias corridos${extras ? `, ${extras}` : ""}). ` +
           `Análise automática: ${verdict.recommendation}. ${verdict.reasoning}`,
         link: "/aprovacoes",
+        extra: camposZaia,
       });
     }
 
@@ -148,6 +164,7 @@ export async function createVacationRequest(params: {
         title: "Nova solicitação de férias",
         message: `${facts.employee.name} — ${period} (${facts.request.days} dias${extras ? `, ${extras}` : ""}).`,
         link: "/aprovacoes",
+        extra: camposZaia,
       });
     }
   }
@@ -236,6 +253,12 @@ export async function decideVacationRequest(params: {
     .where(eq(vacationRequests.id, requestId));
 
   const period = `${formatBR(request.startDate)} a ${formatBR(request.endDate)}`;
+  const camposZaia = {
+    colaborador: row.employeeName,
+    inicio: formatBR(request.startDate),
+    fim: formatBR(request.endDate),
+    dias: String(request.days),
+  };
 
   if (status === "approved") {
     await notify({
@@ -247,6 +270,7 @@ export async function decideVacationRequest(params: {
         `O pagamento é devido até ${formatBR(paymentDueDate!)} e o recibo precisa ` +
         `ser assinado antes do início. Bom descanso!`,
       link: "/ferias/minhas",
+      extra: { ...camposZaia, decisao: "aprovadas" },
     });
   } else if (status === "rejected") {
     await notify({
@@ -258,6 +282,7 @@ export async function decideVacationRequest(params: {
         (note ? ` Motivo: ${note}` : "") +
         " Fale com o RH para combinar novas datas.",
       link: "/ferias/minhas",
+      extra: { ...camposZaia, decisao: "reprovadas" },
     });
   }
 
@@ -322,6 +347,13 @@ export async function cancelVacationRequest(params: {
     .where(eq(vacationRequests.id, params.requestId));
 
   const period = `${formatBR(row.request.startDate)} a ${formatBR(row.request.endDate)}`;
+  const camposZaia = {
+    colaborador: row.employeeName,
+    inicio: formatBR(row.request.startDate),
+    fim: formatBR(row.request.endDate),
+    dias: String(row.request.days),
+    decisao: "canceladas",
+  };
 
   // Quem não cancelou precisa saber.
   if (!isOwner) {
@@ -334,6 +366,7 @@ export async function cancelVacationRequest(params: {
         (params.reason ? ` Motivo: ${params.reason}` : "") +
         " Procure o RH para remarcar.",
       link: "/ferias/minhas",
+      extra: camposZaia,
     });
   } else {
     const rhUsers = await db
@@ -350,6 +383,7 @@ export async function cancelVacationRequest(params: {
           `${row.employeeName} cancelou as férias de ${period}.` +
           (params.reason ? ` Motivo: ${params.reason}` : ""),
         link: "/aprovacoes",
+        extra: camposZaia,
       });
     }
   }

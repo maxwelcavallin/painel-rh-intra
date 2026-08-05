@@ -181,6 +181,17 @@ export async function notifyExpiringVacations(
     const prazo = formatBR(item.deadline.concessiveEnd);
     const vencido = item.severity === "expired";
 
+    /**
+     * O mesmo webhook atende colaborador e gestor, então quem varia é o
+     * SUJEITO da frase — o servidor manda pronto porque "as férias de Bruno"
+     * lido pelo próprio Bruno fica errado.
+     */
+    const camposZaia = {
+      colaborador: item.name,
+      prazo,
+      saldo: String(item.daysRemaining),
+    };
+
     const paraColaborador = vencido
       ? `Atenção: seu período aquisitivo de férias venceu em ${prazo} e ainda ` +
         `restam ${item.daysRemaining} dia(s) a usufruir. Procure o RH para regularizar.`
@@ -194,6 +205,7 @@ export async function notifyExpiringVacations(
       title: vencido ? "Férias vencidas" : "Férias a vencer",
       message: paraColaborador,
       link: "/ferias/solicitar",
+      extra: { ...camposZaia, sujeito: "suas férias" },
     });
     report.notified++;
 
@@ -209,6 +221,7 @@ export async function notifyExpiringVacations(
           `o prazo de concessão ${vencido ? "venceu" : "termina"} em ${prazo}. ` +
           `Passar desse prazo obriga a empresa a pagar em dobro (art. 137 da CLT).`,
         link: "/ferias/vencimentos",
+        extra: { ...camposZaia, sujeito: `as férias de ${item.name}` },
       });
       report.notified++;
     }

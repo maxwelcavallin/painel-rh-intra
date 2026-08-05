@@ -87,6 +87,9 @@ export async function createForm(params: {
     title: `Novo formulário: ${title}`,
     message: params.description?.trim() || `Responda o formulário "${title}".`,
     link: `/formularios/${created.id}`,
+    // Formulário não tem data-limite no modelo; o que existe é a cobrança
+    // automática por `reminderAfterHours`. Por isso não há campo `prazo`.
+    extra: { formulario: title },
   });
 
   return { ok: true, id: created.id, recipients: recipients.length };
@@ -356,6 +359,10 @@ export async function sendPendingReminders(): Promise<ReminderReport> {
         title: `Pendências no formulário "${form.title}"`,
         message,
         link: "/formularios/painel",
+        extra: {
+          formulario: form.title,
+          pendentes: String(pendingNames.length),
+        },
       });
       const sent = outcome.channels.some((c) => c.status === "sent");
 

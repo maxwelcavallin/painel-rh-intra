@@ -13,6 +13,8 @@ import {
 } from "../lib/clt";
 import { isValidCpf } from "../lib/format";
 
+import { cpfFicticio } from "./fake-cpf";
+
 import * as schema from "./schema";
 import {
   broadcastDeliveries,
@@ -34,31 +36,6 @@ import {
  */
 
 const db = drizzle(neon(process.env.DATABASE_URL!), { schema });
-
-/**
- * Completa uma base de 9 dígitos com os dois verificadores corretos.
- *
- * Escrever CPF fictício à mão não funciona: o formulário de cadastro valida o
- * dígito verificador, então um CPF "de mentira" mal formado trava a edição do
- * próprio seed. Calculando aqui, o dado fictício continua fictício mas passa
- * na mesma validação que um real.
- */
-function cpfFicticio(base9: string): string {
-  const digits = base9.split("").map(Number);
-
-  const checkDigit = (slice: number[]) => {
-    const weightStart = slice.length + 1;
-    const sum = slice.reduce((acc, d, i) => acc + d * (weightStart - i), 0);
-    const rest = (sum * 10) % 11;
-    return rest === 10 ? 0 : rest;
-  };
-
-  const d1 = checkDigit(digits);
-  const d2 = checkDigit([...digits, d1]);
-  const full = `${base9}${d1}${d2}`;
-
-  return `${full.slice(0, 3)}.${full.slice(3, 6)}.${full.slice(6, 9)}-${full.slice(9)}`;
-}
 
 const SENHA_DEMO = {
   admin: "Rh@2026demo",

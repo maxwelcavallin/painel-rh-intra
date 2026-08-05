@@ -315,6 +315,8 @@ export async function notifyMany(params: {
   title: string;
   message: string;
   link?: string;
+  /** Campos extras do template, iguais para todo mundo do lote. */
+  extra?: Record<string, string>;
 }): Promise<void> {
   await Promise.allSettled(
     params.userIds.map((userId) => notify({ ...params, userId })),

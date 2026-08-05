@@ -2,7 +2,7 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import { db } from "../src/db";
 import { users } from "../src/db/schema";
@@ -139,7 +139,25 @@ async function main() {
 
   const candidatos = await listManagerCandidates(criado.id);
   check("candidatos a gestor não incluem a própria pessoa", candidatos.some((c) => c.id === criado.id), false);
-  check("candidatos são só gestor/admin", candidatos.length, 3);
+  // Contagem absoluta não serve: o banco tem o seed de demonstração e também a
+  // equipe real da 01 Tec. O que a regra promete é o PAPEL de quem entra.
+  const papeis = await db
+    .select({ id: users.id, role: users.role })
+    .from(users)
+    .where(inArray(users.role, ["gestor", "admin"]));
+  const idsElegiveis = new Set(papeis.map((p) => p.id));
+
+  check("há candidatos", candidatos.length > 0, true);
+  check(
+    "todo candidato é gestor ou admin",
+    candidatos.every((c) => idsElegiveis.has(c.id)),
+    true,
+  );
+  check(
+    "nenhum gestor/admin ativo ficou de fora",
+    candidatos.length,
+    papeis.filter((p) => p.id !== criado.id).length,
+  );
 
   console.log("\n— Troca de senha");
   const comSenha = await updateEmployee(criado.id, base(), "NovaSenha@2026");

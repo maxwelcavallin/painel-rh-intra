@@ -2,7 +2,7 @@ import { config } from "dotenv";
 
 config({ path: ".env.local" });
 
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, isNotNull, ne } from "drizzle-orm";
 
 import { db } from "../src/db";
 import { notifications, users, vacationRequests } from "../src/db/schema";
@@ -83,8 +83,21 @@ async function main() {
   await db.delete(vacationRequests);
 
   console.log("\n— listVacationStatus cobre todo mundo com admissão");
+  // Quantas pessoas há é dado do banco: além do seed de demonstração, este
+  // banco hospeda a equipe real da 01 Tec, que entra e sai conforme os testes.
+  const [{ total: comAdmissao }] = await db
+    .select({ total: count() })
+    .from(users)
+    .where(
+      and(
+        eq(users.isActive, true),
+        ne(users.employmentStatus, "desligado"),
+        isNotNull(users.admissionDate),
+      ),
+    );
+
   const status = await listVacationStatus("2026-08-05");
-  check("7 pessoas do seed", status.length, 7);
+  check("cobre todo ativo com admissão", status.length, comAdmissao);
   check(
     "todas com prazo de concessão calculado",
     status.every((s) => /^\d{4}-\d{2}-\d{2}$/.test(s.deadline.concessiveEnd)),
@@ -223,7 +236,7 @@ async function main() {
   await limpar();
   await db.delete(notifications);
   const aviso = await notifyExpiringVacations("2026-08-05");
-  check("checou as 7 pessoas", aviso.checked, 7);
+  check("checou todo mundo", aviso.checked, comAdmissao);
   check("achou gente vencida", aviso.expired > 0, true);
   check("notificou", aviso.notified > 0, true);
 
