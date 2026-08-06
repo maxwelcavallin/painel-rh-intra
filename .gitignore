@@ -54,3 +54,6 @@ dev-server.log
 
 # Acessos de teste em texto puro — nunca versionar (repositório público).
 docs/ACESSOS.local.md
+
+# Visual Studio
+.vs/

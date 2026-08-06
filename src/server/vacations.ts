@@ -70,7 +70,7 @@ export async function createVacationRequest(params: {
     return { ok: false, error: "Dias de abono inválidos." };
   }
 
-  const facts = await buildVacationFacts({ userId, startDate, endDate, abonoDays });
+  const facts = await buildVacationFacts({ userId, startDate, endDate, abonoDays, advance13th });
   const verdict = await judgeVacationRequest(facts, notes);
 
   // Bloqueio legal decide sozinho. Recomendação de aprovar/revisar ainda

@@ -28,9 +28,13 @@ let client: Database | null = null;
  * estar ligado). Assim o erro só aparece quando alguém de fato consulta o banco.
  */
 export const db = new Proxy({} as Database, {
-  get(_target, prop, receiver) {
+  get(_target, prop) {
     client ??= createClient();
-    return Reflect.get(client, prop, receiver);
+    // `receiver = client` (não o Proxy). Se o Drizzle usar campos privados
+    // (`#field`) internamente, refletir com o Proxy como receiver estoura
+    // TypeError; passar o client evita isso e não muda semântica de leitura.
+    const value = Reflect.get(client, prop, client);
+    return typeof value === "function" ? value.bind(client) : value;
   },
 });
 

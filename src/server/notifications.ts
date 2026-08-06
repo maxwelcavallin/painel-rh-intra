@@ -243,9 +243,21 @@ export async function notify(params: {
 
   const firstName = person.name.split(" ")[0];
 
+  // Carrega a matriz de canais deste tipo em UMA query — antes fazíamos uma
+  // por canal, o que virava N+1 no envio em lote (`vacation-alerts.ts`).
+  const settingsRows = await db
+    .select({
+      channel: notificationSettings.channel,
+      enabled: notificationSettings.enabled,
+    })
+    .from(notificationSettings)
+    .where(eq(notificationSettings.type, params.type));
+  const channelEnabled: Partial<Record<Channel, boolean>> = {};
+  for (const row of settingsRows) channelEnabled[row.channel] = row.enabled;
+
   // 2. Canais externos — só os que o RH ligou para este tipo.
   for (const channel of CONFIGURABLE_CHANNELS) {
-    if (!(await isEnabled(params.type, channel))) continue;
+    if (!channelEnabled[channel]) continue;
 
     if (channel === "email") {
       // Fora de escopo do v1 por decisão de produto: na demonstração o

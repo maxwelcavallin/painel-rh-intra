@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 /* ------------------------------------------------------------------ */
@@ -110,7 +111,9 @@ export const users = pgTable(
     // --- Organizacional ---
     sector: text("sector"),
     position: text("position"),
-    managerId: uuid("manager_id"),
+    managerId: uuid("manager_id").references((): AnyPgColumn => users.id, {
+      onDelete: "set null",
+    }),
     admissionDate: date("admission_date", { mode: "string" }),
     employmentType: employmentTypeEnum("employment_type"),
     employmentStatus: employmentStatusEnum("employment_status")
@@ -222,31 +225,35 @@ export const vacationRequests = pgTable(
      */
     paymentDueDate: date("payment_due_date", { mode: "string" }),
     paidAt: timestamp("paid_at", { withTimezone: true }),
-    paidBy: uuid("paid_by"),
+    paidBy: uuid("paid_by").references(() => users.id, { onDelete: "set null" }),
     /** Recibo de férias assinado — sem ele a empresa fica exposta. */
     receiptSignedAt: timestamp("receipt_signed_at", { withTimezone: true }),
-    receiptRegisteredBy: uuid("receipt_registered_by"),
+    receiptRegisteredBy: uuid("receipt_registered_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
 
     // --- Repasse à Senior (lotes dos dias 10 e 20) ---
     reportedToSeniorAt: timestamp("reported_to_senior_at", { withTimezone: true }),
 
     // --- Cancelamento / remanejamento ---
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
-    cancelledBy: uuid("cancelled_by"),
+    cancelledBy: uuid("cancelled_by").references(() => users.id, { onDelete: "set null" }),
     cancelReason: text("cancel_reason"),
 
     /** Status consolidado, derivado das duas aprovações. */
     status: decisionEnum("status").notNull().default("pending"),
 
     rhApproval: decisionEnum("rh_approval").notNull().default("pending"),
-    rhApprovedBy: uuid("rh_approved_by"),
+    rhApprovedBy: uuid("rh_approved_by").references(() => users.id, { onDelete: "set null" }),
     rhApprovedAt: timestamp("rh_approved_at", { withTimezone: true }),
     rhNote: text("rh_note"),
 
     managerApproval: decisionEnum("manager_approval")
       .notNull()
       .default("pending"),
-    managerApprovedBy: uuid("manager_approved_by"),
+    managerApprovedBy: uuid("manager_approved_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     managerApprovedAt: timestamp("manager_approved_at", { withTimezone: true }),
     managerNote: text("manager_note"),
 

@@ -15,7 +15,7 @@ import Typography from "@mui/material/Typography";
 import { Check, Download, FileSignature, Send, Wallet } from "lucide-react";
 
 import { requireRH } from "@/lib/dal";
-import { formatBR } from "@/lib/clt";
+import { formatBR, todayISOBrazil } from "@/lib/clt";
 import { listOperationalControl } from "@/server/vacations";
 
 import {
@@ -27,7 +27,7 @@ import {
 export const metadata: Metadata = { title: "Controle de férias" };
 
 function diasAte(iso: string): number {
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = todayISOBrazil();
   const [ay, am, ad] = hoje.split("-").map(Number);
   const [by, bm, bd] = iso.split("-").map(Number);
   return Math.round(

@@ -50,9 +50,14 @@ export type ZaiaResult =
 export function normalizePhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const digits = raw.replace(/\D/g, "");
-  if (digits.length < 10) return null;
-  if (digits.startsWith("55")) return digits.length >= 12 ? digits : null;
-  return `55${digits}`;
+  // Número BR sem DDI: 10 (fixo) ou 11 (celular). Com DDI 55: 12 ou 13.
+  // "Começa com 55" NÃO é garantia de DDI — DDD 55 (Santa Maria/RS) também
+  // começa. Distinguimos pelo comprimento total.
+  if (digits.length === 12 || digits.length === 13) {
+    return digits.startsWith("55") ? digits : `55${digits}`;
+  }
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  return null;
 }
 
 function webhookFor(template: ZaiaTemplate): string | null {

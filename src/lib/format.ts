@@ -59,8 +59,9 @@ export function maskCpf(value: string | null | undefined): string {
 export function maskRg(value: string | null | undefined): string {
   if (!value) return "—";
   const clean = value.trim();
-  if (clean.length <= 3) return "***";
-  return `${"*".repeat(Math.max(3, clean.length - 3))}${clean.slice(-3)}`;
+  // RGs curtos revelariam quase tudo com "***" + últimos 3; escondemos por completo.
+  if (clean.length <= 6) return "***";
+  return `${"*".repeat(clean.length - 3)}${clean.slice(-3)}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -96,4 +97,23 @@ export function formatDateBR(iso: string | null | undefined): string {
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return "—";
   return `${d}/${m}/${y}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* CSV                                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Escapa uma célula de CSV que será aberta no Excel/LibreOffice.
+ *
+ * `"` viram `""` (padrão CSV) e o campo é envolvido em aspas. Além disso,
+ * se o valor começa com `=`, `+`, `-`, `@` ou tab, prefixamos com apóstrofo
+ * — sem essa proteção o Excel avalia o conteúdo como fórmula MESMO dentro de
+ * aspas (as aspas envolventes são removidas antes da avaliação). Um nome
+ * como `=SUM(A:A)` ou `=cmd|'/c calc'!A1` (Windows) executa no destino.
+ */
+export function csvCell(value: unknown): string {
+  const s = value == null ? "" : String(value);
+  const safe = /^[=+\-@\t]/.test(s) ? `'${s}` : s;
+  return `"${safe.replace(/"/g, '""')}"`;
 }

@@ -62,6 +62,12 @@ export async function notifyPaymentDeadlines(
     .from(users)
     .where(and(eq(users.role, "admin"), eq(users.isActive, true)));
 
+  // Coletamos primeiro TODAS as notificações que precisam sair; disparamos no
+  // final em paralelo. Assim um cron com N férias × M RHs não vira envio serial
+  // com timeout externo em cada iteração.
+  type Pending = Parameters<typeof notify>[0];
+  const pending: Pending[] = [];
+
   for (const row of rows) {
     // Férias que já começaram saíram da janela de prevenção.
     if (row.startDate < todayISO) continue;
@@ -80,7 +86,7 @@ export async function notifyPaymentDeadlines(
             : `vence em ${restam} dia(s)`;
 
         for (const rh of rhUsers) {
-          await notify({
+          pending.push({
             type: "vacation_payment",
             userId: rh.id,
             title:
@@ -98,7 +104,6 @@ export async function notifyPaymentDeadlines(
               prazo: formatBR(row.paymentDueDate),
             },
           });
-          report.notified++;
         }
       }
     }
@@ -110,7 +115,7 @@ export async function notifyPaymentDeadlines(
       if (ateInicio <= DUE_SOON_DAYS) {
         report.receiptPending++;
 
-        await notify({
+        pending.push({
           type: "vacation_receipt",
           userId: row.userId,
           title: "Recibo de férias pendente",
@@ -124,10 +129,9 @@ export async function notifyPaymentDeadlines(
             sujeito: "das suas férias",
           },
         });
-        report.notified++;
 
         for (const rh of rhUsers) {
-          await notify({
+          pending.push({
             type: "vacation_receipt",
             userId: rh.id,
             title: `Recibo pendente: ${row.employeeName}`,
@@ -141,11 +145,20 @@ export async function notifyPaymentDeadlines(
               sujeito: `das férias de ${row.employeeName}`,
             },
           });
-          report.notified++;
         }
       }
     }
   }
+
+  const results = await Promise.allSettled(pending.map((p) => notify(p)));
+  // `notify()` nunca lança — o filtro `fulfilled` sozinho contaria só tentativas
+  // enfileiradas. Consideramos "notificado" quem gravou in-app OU teve pelo menos
+  // um canal externo entregue, alinhando com o significado do envio serial anterior.
+  report.notified = results.filter(
+    (r) =>
+      r.status === "fulfilled" &&
+      (r.value.inApp || r.value.channels.some((c) => c.status === "sent")),
+  ).length;
 
   return report;
 }

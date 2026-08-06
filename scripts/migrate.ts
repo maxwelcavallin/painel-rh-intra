@@ -23,6 +23,7 @@ const OWN_TABLES = new Set([
   "password_reset_codes",
   "vacation_requests",
   "notifications",
+  "notification_settings",
   "broadcasts",
   "broadcast_deliveries",
   "forms",

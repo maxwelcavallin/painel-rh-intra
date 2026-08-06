@@ -14,6 +14,8 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import type { Theme } from "@mui/material/styles";
 import { Cake, CalendarDays, Plane } from "lucide-react";
 
+import { todayISOBrazil } from "@/lib/clt";
+
 type Vacation = {
   id: string;
   name: string;
@@ -110,7 +112,7 @@ export function YearCalendar({
   birthdays: Birthday[];
 }) {
   const [month, setMonth] = useState(new Date().getMonth());
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = todayISOBrazil();
 
   // Índices por data, montados uma vez — evita varrer as listas por célula.
   const { holidayByDate, vacationsByDate, birthdaysByMonthDay } = useMemo(() => {
