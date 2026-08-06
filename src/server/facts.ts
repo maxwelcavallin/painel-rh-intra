@@ -16,6 +16,7 @@ import {
   MIN_ANY_FRACTION,
   MIN_LONGEST_FRACTION,
   rangesOverlap,
+  todayISOBrazil,
   validateAbono,
   toUTC,
   twoDaysAfter,
@@ -41,7 +42,9 @@ import { getHolidaysForRange, type Holiday } from "./holidays";
  */
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Regra trabalhista é local — usar UTC daria "amanhã" após 21h de Brasília
+  // e derrubaria `startsInThePast`/`noticeDays` no período noturno.
+  return todayISOBrazil();
 }
 
 /* ------------------------------------------------------------------ */
@@ -106,6 +109,8 @@ export async function buildVacationFacts(params: {
   endDate: string;
   /** Dias vendidos como abono pecuniário (art. 143). Consomem o mesmo saldo. */
   abonoDays?: number;
+  /** Antecipação da 1ª parcela do 13º (Lei 4.749/65) — só pode uma por ano. */
+  advance13th?: boolean;
   /** Ignora esta solicitação ao checar sobreposição (usado ao reavaliar). */
   excludeRequestId?: string;
 }): Promise<VacationFacts> {
@@ -181,6 +186,8 @@ export async function buildVacationFacts(params: {
       startDate: vacationRequests.startDate,
       endDate: vacationRequests.endDate,
       status: vacationRequests.status,
+      abonoDays: vacationRequests.abonoDays,
+      advance13th: vacationRequests.advance13th,
     })
     .from(vacationRequests)
     .where(
@@ -222,7 +229,11 @@ export async function buildVacationFacts(params: {
           r.startDate >= acquisitivePeriod!.start &&
           r.startDate <= acquisitivePeriod!.end,
       )
-      .reduce((sum, r) => sum + daysBetweenInclusive(r.startDate, r.endDate), 0);
+      .reduce(
+        // Abono consome saldo igual ao gozo — ver vacation-deadlines.ts:107.
+        (sum, r) => sum + daysBetweenInclusive(r.startDate, r.endDate) + r.abonoDays,
+        0,
+      );
 
     // Abono consome o mesmo saldo do gozo — vender 10 dias e tirar 30 não existe.
     const total = daysAlreadyTaken + days + abonoDays;
@@ -244,6 +255,26 @@ export async function buildVacationFacts(params: {
       daysAlreadyTaken,
     });
     if (abonoProblem && !exceedsAnnualLimit) conflicts.push(abonoProblem);
+  }
+
+  /* --- Antecipação do 13º: uma por ano-calendário (Lei 4.749/65) ---- */
+
+  if (params.advance13th) {
+    const year = startDate.slice(0, 4);
+    const priorAdvance = ownRequests.find(
+      (r) =>
+        r.status !== "rejected" &&
+        r.advance13th &&
+        r.startDate.startsWith(year),
+    );
+    if (priorAdvance) {
+      warnings.push(
+        `Já existe solicitação com antecipação do 13º em ${year} ` +
+          `(início em ${formatBR(priorAdvance.startDate)}, status ${priorAdvance.status}). ` +
+          `A Lei 4.749/65, art. 4º, permite apenas uma antecipação por ano-calendário — ` +
+          `confira antes de aprovar.`,
+      );
+    }
   }
 
   /* --- Art. 134 §3º: feriado e DSR -------------------------------- */

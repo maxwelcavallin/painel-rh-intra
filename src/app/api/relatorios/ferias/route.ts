@@ -1,6 +1,6 @@
 import { HttpError, requireRoleApi } from "@/lib/dal";
 import { formatBR } from "@/lib/clt";
-import { formatCpf } from "@/lib/format";
+import { csvCell, formatCpf } from "@/lib/format";
 import { listOperationalControl } from "@/server/vacations";
 
 /**
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
         r.receiptSignedAt ? r.receiptSignedAt.toLocaleDateString("pt-BR") : "",
         r.reportedToSeniorAt ? r.reportedToSeniorAt.toLocaleDateString("pt-BR") : "",
       ]
-        .map((campo) => `"${String(campo).replace(/"/g, '""')}"`)
+        .map(csvCell)
         .join(";"),
     );
 

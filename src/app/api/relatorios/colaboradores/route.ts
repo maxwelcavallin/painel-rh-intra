@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { HttpError, requireRoleApi } from "@/lib/dal";
 import { formatBR } from "@/lib/clt";
-import { formatCep, formatCpf, formatPhone } from "@/lib/format";
+import { csvCell, formatCep, formatCpf, formatPhone } from "@/lib/format";
 
 /**
  * Cadastro completo de colaboradores em CSV.
@@ -134,7 +134,7 @@ export async function GET(request: Request) {
       ]
         // Aspas em tudo e aspa dobrada por dentro: endereço com ponto e
         // vírgula ou observação com aspas quebraria as colunas.
-        .map((campo) => `"${String(campo).replace(/"/g, '""')}"`)
+        .map(csvCell)
         .join(";"),
     );
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -141,6 +141,8 @@ export function EmployeeForm({
 
   const [values, setValues] = useState(initial);
   const [cepStatus, setCepStatus] = useState<"idle" | "loading" | "notFound">("idle");
+  // Sequência do último CEP consultado — ignora respostas fora de ordem.
+  const cepSeqRef = useRef(0);
 
   const set = <K extends keyof EmployeeFormValues>(
     key: K,
@@ -167,13 +169,18 @@ export function EmployeeForm({
 
     const cep = onlyDigits(raw);
     if (cep.length !== 8) {
+      // Nova entrada curta invalida qualquer request em voo — evita que uma
+      // resposta antiga chegue depois e sobrescreva o endereço.
+      cepSeqRef.current++;
       setCepStatus("idle");
       return;
     }
 
+    const seq = ++cepSeqRef.current;
     setCepStatus("loading");
     try {
       const response = await fetch(`/api/cep?cep=${cep}`);
+      if (seq !== cepSeqRef.current) return; // resposta obsoleta
       if (!response.ok) throw new Error("cep");
       const address = (await response.json()) as {
         street: string;
@@ -181,6 +188,7 @@ export function EmployeeForm({
         city: string;
         state: string;
       };
+      if (seq !== cepSeqRef.current) return; // outra digitação chegou primeiro
 
       setCepStatus("idle");
       setValues((v) => ({
@@ -192,6 +200,7 @@ export function EmployeeForm({
         state: address.state,
       }));
     } catch {
+      if (seq !== cepSeqRef.current) return;
       setCepStatus("notFound");
     }
   }

@@ -95,6 +95,18 @@ export function toISO(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Data ISO de "hoje" no fuso de São Paulo — a jornada trabalhista aqui é
+ * regida por horário local. Server rodando em UTC (Vercel) já foi para o dia
+ * seguinte às 21h de Brasília; usar isso derruba o "quantos dias faltam".
+ * `sv-SE` é o formato ISO YYYY-MM-DD que o `Intl` entrega naturalmente.
+ */
+export function todayISOBrazil(): string {
+  return new Date().toLocaleDateString("sv-SE", {
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
 export function addDays(isoDate: string, days: number): string {
   return toISO(new Date(toUTC(isoDate).getTime() + days * 86_400_000));
 }

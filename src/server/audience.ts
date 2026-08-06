@@ -42,7 +42,10 @@ export async function resolveAudience(audience: Audience): Promise<Recipient[]> 
         return audience.value ? eq(users.id, audience.value) : null;
       case "location":
         // Usa o flag `isCuritibaMetro`, derivado no cadastro (Fase 2).
-        return eq(users.isCuritibaMetro, audience.value !== "fora_rmc");
+        // Sem valor cai no `scope === null` da linha abaixo — não seleciona ninguém.
+        return audience.value
+          ? eq(users.isCuritibaMetro, audience.value !== "fora_rmc")
+          : null;
       case "all":
       default:
         return null;
