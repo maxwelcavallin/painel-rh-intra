@@ -25,12 +25,28 @@ import type { Role } from "@/db/schema";
  * no DAL dentro de cada página; esconder item de menu não é segurança.
  */
 
+/**
+ * As seções são o submenu: no shell cada uma recolhe, e só a da tela atual
+ * nasce aberta. Por isso elas precisam ser CURTAS — uma seção de oito itens
+ * aberta desfaz o ganho de recolher as outras.
+ *
+ * Foi o que motivou separar "Comunicação" de "Administração": o RH via treze
+ * itens numa coluna só, e Administração sozinha tinha cinco. Ao dividir,
+ * nenhuma seção passa de cinco, e o RH fechado vê quatro linhas em vez de
+ * dezesseis.
+ */
+export type NavSection =
+  | "Meu espaço"
+  | "Equipe"
+  | "Administração"
+  | "Comunicação";
+
 export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   roles: Role[];
-  section: "Meu espaço" | "Equipe" | "Administração";
+  section: NavSection;
 };
 
 const ALL: Role[] = ["user", "gestor", "admin"];
@@ -105,29 +121,46 @@ export const NAV_ITEMS: NavItem[] = [
     section: "Administração",
   },
   {
-    href: "/avisos",
-    label: "Avisos",
-    icon: Megaphone,
-    roles: RH_ONLY,
-    section: "Administração",
-  },
-  {
     href: "/eventos",
     label: "Eventos institucionais",
     icon: CalendarClock,
     roles: RH_ONLY,
     section: "Administração",
   },
+
+  {
+    href: "/avisos",
+    label: "Avisos",
+    icon: Megaphone,
+    roles: RH_ONLY,
+    section: "Comunicação",
+  },
   {
     href: "/comunicacoes",
-    label: "Comunicações",
+    label: "Canais e notificações",
     icon: SlidersHorizontal,
     roles: RH_ONLY,
-    section: "Administração",
+    section: "Comunicação",
   },
 ];
 
-export const SECTION_ORDER = ["Meu espaço", "Equipe", "Administração"] as const;
+export const SECTION_ORDER: readonly NavSection[] = [
+  "Meu espaço",
+  "Equipe",
+  "Administração",
+  "Comunicação",
+];
+
+/** A seção a que uma rota pertence — o shell usa para abrir a certa. */
+export function sectionOf(pathname: string): NavSection | null {
+  // Mais específico primeiro: "/ferias/vencimentos" não pode casar com
+  // "/ferias/solicitar" nem vice-versa, e "/" casaria com tudo.
+  const match = [...NAV_ITEMS]
+    .filter((i) => (i.href === "/" ? pathname === "/" : pathname.startsWith(i.href)))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+
+  return match?.section ?? null;
+}
 
 export function navFor(role: Role): NavItem[] {
   return NAV_ITEMS.filter((item) => item.roles.includes(role));

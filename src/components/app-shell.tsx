@@ -4,6 +4,7 @@ import { useState } from "react";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
+import Collapse from "@mui/material/Collapse";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
@@ -11,7 +12,6 @@ import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
-import ListSubheader from "@mui/material/ListSubheader";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Toolbar from "@mui/material/Toolbar";
@@ -19,12 +19,18 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import NextLink from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Menu as MenuIcon } from "lucide-react";
+import { ChevronDown, LogOut, Menu as MenuIcon } from "lucide-react";
 
 import { Logo } from "@/components/logo";
 import type { Role } from "@/db/schema";
 import { useLocalFlag } from "@/lib/client-state";
-import { navFor, ROLE_LABEL, SECTION_ORDER } from "@/lib/nav";
+import {
+  navFor,
+  ROLE_LABEL,
+  SECTION_ORDER,
+  sectionOf,
+  type NavSection,
+} from "@/lib/nav";
 
 const DRAWER_WIDTH = 240;
 /** Largura recolhida: cabe o ícone centralizado e mais nada. */
@@ -59,6 +65,26 @@ export function AppShell({
 
   const items = navFor(user.role);
 
+  /**
+   * Seções recolhíveis. A que contém a tela atual nasce aberta e as outras
+   * fechadas — é o que resolve a coluna longa do RH, que via as quatro seções
+   * abertas de uma vez.
+   *
+   * `manual` guarda só o que o usuário clicou; o resto cai no padrão. Não vai
+   * para o localStorage de propósito: a cada carregamento o menu volta a se
+   * organizar em torno de onde a pessoa está, que é quase sempre o que ela
+   * quer. O que persiste é o recolhimento da coluna inteira, esse sim uma
+   * preferência de layout.
+   */
+  const secaoAtiva = sectionOf(pathname);
+  const [manual, setManual] = useState<Partial<Record<NavSection, boolean>>>({});
+
+  const estaAberta = (section: NavSection) =>
+    manual[section] ?? section === secaoAtiva;
+
+  const alternarSecao = (section: NavSection) =>
+    setManual((atual) => ({ ...atual, [section]: !estaAberta(section) }));
+
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -85,37 +111,68 @@ export function AppShell({
           const sectionItems = items.filter((i) => i.section === section);
           if (sectionItems.length === 0) return null;
 
+          // Recolhido não recolhe seção: ali já não há rótulo para clicar, e
+          // esconder ícones deixaria a coluna sem nenhuma pista de destino.
+          const aberta = mini || estaAberta(section);
+
           return (
-            <List
-              key={section}
-              dense
-              subheader={
-                <ListSubheader
-                  disableSticky
+            <List key={section} dense sx={{ py: 0.25 }}>
+              {mini ? (
+                <Box
                   sx={{
-                    bgcolor: "transparent",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    color: "text.secondary",
-                    lineHeight: 2.5,
-                    // No mini o rótulo não cabe; um traço mantém o
-                    // agrupamento visível sem texto cortado.
-                    ...(mini && {
-                      textIndent: "-9999px",
-                      overflow: "hidden",
-                      borderTop: "1px solid",
-                      borderTopColor: "divider",
-                      mx: 1.5,
-                      lineHeight: 1.4,
-                    }),
+                    borderTop: "1px solid",
+                    borderTopColor: "divider",
+                    mx: 1.5,
+                    my: 1,
                   }}
+                />
+              ) : (
+                <ListItemButton
+                  onClick={() => alternarSecao(section)}
+                  aria-expanded={aberta}
+                  sx={{ mx: 1, borderRadius: 1, py: 0.25 }}
                 >
-                  {section}
-                </ListSubheader>
-              }
-            >
+                  <ListItemText
+                    primary={section}
+                    slotProps={{
+                      primary: {
+                        sx: {
+                          fontSize: 11,
+                          fontWeight: 600,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "text.secondary",
+                        },
+                      },
+                    }}
+                  />
+                  {/* Um ponto marca a seção que está fechada mas contém a tela
+                      aberta — sem ele, navegar para dentro de uma seção que o
+                      usuário fechou faria o item ativo sumir sem explicação. */}
+                  {!aberta && section === secaoAtiva && (
+                    <Box
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        bgcolor: "primary.main",
+                        mr: 0.75,
+                      }}
+                    />
+                  )}
+                  <ChevronDown
+                    size={14}
+                    style={{
+                      flex: "none",
+                      color: "var(--mui-palette-text-secondary)",
+                      transform: aberta ? "none" : "rotate(-90deg)",
+                      transition: "transform 150ms",
+                    }}
+                  />
+                </ListItemButton>
+              )}
+
+              <Collapse in={aberta} timeout="auto" unmountOnExit>
               {sectionItems.map(({ href, label, icon: Icon }) => {
                 const active = isActive(href);
                 return (
@@ -161,6 +218,7 @@ export function AppShell({
                   </ListItemButton>
                 );
               })}
+              </Collapse>
             </List>
           );
         })}

@@ -273,6 +273,14 @@ function EventoDialog({
               </Grid>
             </Grid>
 
+            {/*
+              `displayEmpty` e o label fixo em `shrink` existem por causa de
+              "Empresa inteira", cujo valor é string vazia. Sem os dois o MUI
+              trata vazio como "nada escolhido": guardava a opção certa e
+              mandava ao servidor, mas deixava o campo em branco na tela, como
+              se o clique não tivesse pegado. O valor continua sendo "" — quem
+              traduz para NULL é o servidor, e é lá que essa regra pertence.
+            */}
             <TextField
               name="sector"
               label="Abrangência"
@@ -281,6 +289,10 @@ function EventoDialog({
               value={sector}
               onChange={(e) => setSector(e.target.value)}
               helperText="Quem é avisado ao pedir férias nesse período"
+              slotProps={{
+                select: { displayEmpty: true },
+                inputLabel: { shrink: true },
+              }}
             >
               <MenuItem value="">Empresa inteira</MenuItem>
               {setores.map((s) => (

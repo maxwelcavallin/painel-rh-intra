@@ -46,6 +46,16 @@ const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
  */
 const MAX_LANES = 3;
 
+/**
+ * Eventos ficam ACIMA das férias e com teto menor.
+ *
+ * São período da empresa, não de pessoa: quando existem, valem para a célula
+ * inteira e precisam ser lidos antes de quem está fora. Dois bastam — inventário
+ * e fechamento na mesma semana já é o pior caso real; o que passar disso o RH lê
+ * na lista abaixo da grade.
+ */
+const MAX_EVENT_LANES = 2;
+
 /** Altura fixa da barra. Precisa ser constante ou as faixas desalinham. */
 const LANE_H = 19;
 
@@ -71,27 +81,33 @@ function firstName(full: string) {
   return full.split(" ")[0];
 }
 
-function overlaps(a: Vacation, b: Vacation) {
+/**
+ * Um intervalo qualquer que vira barra na grade. Férias e eventos passam pelo
+ * mesmo algoritmo de pistas, cada um na sua faixa de trilhas.
+ */
+type Faixa = { id: string; start: string; end: string; rotulo: string };
+
+function overlaps(a: Faixa, b: Faixa) {
   return a.start <= b.end && b.start <= a.end;
 }
 
 /**
- * Distribui as férias do mês em pistas horizontais.
+ * Distribui intervalos do mês em pistas horizontais.
  *
- * Sem isso, cada célula empilharia as pessoas na ordem em que aparecem e a
- * mesma pessoa pularia de linha ao longo do período — a faixa deixaria de ser
- * legível como um bloco contínuo. Aqui cada férias ganha uma pista e fica
- * nela do primeiro ao último dia.
+ * Sem isso, cada célula empilharia os itens na ordem em que aparecem e o mesmo
+ * item pularia de linha ao longo do período — a faixa deixaria de ser legível
+ * como um bloco contínuo. Aqui cada intervalo ganha uma pista e fica nela do
+ * primeiro ao último dia.
  */
-function assignLanes(list: Vacation[]): Map<string, number> {
+function assignLanes(list: Faixa[]): Map<string, number> {
   const ordered = [...list].sort(
     (a, b) =>
       a.start.localeCompare(b.start) ||
       b.end.localeCompare(a.end) ||
-      a.name.localeCompare(b.name),
+      a.rotulo.localeCompare(b.rotulo),
   );
 
-  const lanes: Vacation[][] = [];
+  const lanes: Faixa[][] = [];
   const result = new Map<string, number>();
 
   for (const item of ordered) {
@@ -124,31 +140,47 @@ export function YearCalendar({
   const hoje = todayISOBrazil();
 
   // Índices por data, montados uma vez — evita varrer as listas por célula.
-  const { holidayByDate, vacationsByDate, birthdaysByMonthDay } = useMemo(() => {
-    const h = new Map<string, Holiday>();
-    for (const item of holidays) h.set(item.date, item);
+  const { holidayByDate, vacationsByDate, birthdaysByMonthDay, eventsByDate } =
+    useMemo(() => {
+      const h = new Map<string, Holiday>();
+      for (const item of holidays) h.set(item.date, item);
 
-    const v = new Map<string, Vacation[]>();
-    for (const item of vacations) {
       // Preenche cada dia do intervalo, em UTC para não deslocar por fuso.
-      const [ys, ms, ds] = item.start.split("-").map(Number);
-      const [ye, me, de] = item.end.split("-").map(Number);
-      let cursor = Date.UTC(ys, ms - 1, ds);
-      const last = Date.UTC(ye, me - 1, de);
-      while (cursor <= last) {
-        const key = new Date(cursor).toISOString().slice(0, 10);
-        v.set(key, [...(v.get(key) ?? []), item]);
-        cursor += 86_400_000;
+      const espalhar = <T,>(
+        inicio: string,
+        fim: string,
+        item: T,
+        destino: Map<string, T[]>,
+      ) => {
+        const [ys, ms, ds] = inicio.split("-").map(Number);
+        const [ye, me, de] = fim.split("-").map(Number);
+        let cursor = Date.UTC(ys, ms - 1, ds);
+        const last = Date.UTC(ye, me - 1, de);
+        while (cursor <= last) {
+          const key = new Date(cursor).toISOString().slice(0, 10);
+          destino.set(key, [...(destino.get(key) ?? []), item]);
+          cursor += 86_400_000;
+        }
+      };
+
+      const v = new Map<string, Vacation[]>();
+      for (const item of vacations) espalhar(item.start, item.end, item, v);
+
+      const e = new Map<string, CalendarEvent[]>();
+      for (const item of events) espalhar(item.startDate, item.endDate, item, e);
+
+      const b = new Map<string, Birthday[]>();
+      for (const item of birthdays) {
+        b.set(item.monthDay, [...(b.get(item.monthDay) ?? []), item]);
       }
-    }
 
-    const b = new Map<string, Birthday[]>();
-    for (const item of birthdays) {
-      b.set(item.monthDay, [...(b.get(item.monthDay) ?? []), item]);
-    }
-
-    return { holidayByDate: h, vacationsByDate: v, birthdaysByMonthDay: b };
-  }, [vacations, holidays, birthdays]);
+      return {
+        holidayByDate: h,
+        vacationsByDate: v,
+        birthdaysByMonthDay: b,
+        eventsByDate: e,
+      };
+    }, [vacations, holidays, birthdays, events]);
 
   const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
@@ -157,7 +189,9 @@ export function YearCalendar({
   const { laneOf, laneCount } = useMemo(() => {
     const primeiro = iso(year, month, 1);
     const ultimo = iso(year, month, daysInMonth);
-    const doMes = vacations.filter((v) => v.start <= ultimo && v.end >= primeiro);
+    const doMes = vacations
+      .filter((v) => v.start <= ultimo && v.end >= primeiro)
+      .map((v) => ({ id: v.id, start: v.start, end: v.end, rotulo: v.name }));
     const map = assignLanes(doMes);
     return {
       laneOf: map,
@@ -167,6 +201,27 @@ export function YearCalendar({
       ),
     };
   }, [vacations, year, month, daysInMonth]);
+
+  const { eventLaneOf, eventLaneCount } = useMemo(() => {
+    const primeiro = iso(year, month, 1);
+    const ultimo = iso(year, month, daysInMonth);
+    const doMes = events
+      .filter((e) => e.startDate <= ultimo && e.endDate >= primeiro)
+      .map((e) => ({
+        id: e.id,
+        start: e.startDate,
+        end: e.endDate,
+        rotulo: e.title,
+      }));
+    const map = assignLanes(doMes);
+    return {
+      eventLaneOf: map,
+      eventLaneCount: Math.min(
+        MAX_EVENT_LANES,
+        map.size === 0 ? 0 : Math.max(...map.values()) + 1,
+      ),
+    };
+  }, [events, year, month, daysInMonth]);
 
   const cells = [
     ...Array.from({ length: firstWeekday }, () => null),
@@ -262,6 +317,7 @@ export function YearCalendar({
                   const holiday = holidayByDate.get(date);
                   const onVacation = vacationsByDate.get(date) ?? [];
                   const cakes = birthdaysByMonthDay.get(date.slice(5)) ?? [];
+                  const noEvento = eventsByDate.get(date) ?? [];
                   const weekend = [0, 6].includes(weekdayIndex);
                   const isToday = date === hoje;
 
@@ -271,6 +327,10 @@ export function YearCalendar({
                   );
 
                   const detalhe = [
+                    noEvento.length > 0 &&
+                      `Evento: ${noEvento
+                        .map((e) => e.title + (e.sector ? ` (${e.sector})` : ""))
+                        .join(", ")}`,
                     holiday && `Feriado ${holiday.scope}: ${holiday.name}`,
                     onVacation.length > 0 &&
                       `De férias: ${onVacation.map((v) => v.name).join(", ")}`,
@@ -287,7 +347,8 @@ export function YearCalendar({
                     >
                       <Box
                         sx={{
-                          minHeight: 44 + laneCount * LANE_H,
+                          minHeight:
+                            44 + (laneCount + eventLaneCount) * LANE_H,
                           borderRadius: 1,
                           border: "1px solid",
                           borderColor: holiday ? "error.main" : "divider",
@@ -330,6 +391,76 @@ export function YearCalendar({
                             {day}
                           </Typography>
                         </Box>
+
+                        {/*
+                          Eventos institucionais vêm ANTES das férias: o período
+                          da empresa é o pano de fundo sobre o qual as férias são
+                          lidas. Mesma mecânica de pistas e de emenda entre dias.
+
+                          O que passar de MAX_EVENT_LANES não some calado — está
+                          no tooltip da célula e na lista abaixo da grade.
+                        */}
+                        {Array.from({ length: eventLaneCount }, (_, lane) => {
+                          const evento = noEvento.find(
+                            (e) => eventLaneOf.get(e.id) === lane,
+                          );
+                          if (!evento) {
+                            return (
+                              <Box key={`ev-${lane}`} sx={{ height: LANE_H - 2 }} />
+                            );
+                          }
+
+                          const comeca = evento.startDate === date;
+                          const termina = evento.endDate === date;
+                          const mostraNome = comeca || weekdayIndex === 0;
+
+                          return (
+                            <Box
+                              key={`ev-${lane}`}
+                              sx={{
+                                height: LANE_H - 2,
+                                display: "flex",
+                                alignItems: "center",
+                                px: mostraNome ? 0.75 : 0,
+                                bgcolor: "warning.light",
+                                // NÃO usar `warning.contrastText`: o tema define
+                                // só `main` e `light`, então o MUI deriva o
+                                // contraste do laranja forte e devolve branco —
+                                // que sobre o creme do `light` fica invisível.
+                                // O laranja como texto também não passa (3,1:1
+                                // sobre #FFF3E0); a cor fica na borda e no
+                                // preenchimento, e o texto vai de tinta normal.
+                                color: "text.primary",
+                                borderTop: "1px solid",
+                                borderBottom: "1px solid",
+                                borderColor: "warning.main",
+                                borderTopLeftRadius: comeca ? 4 : 0,
+                                borderBottomLeftRadius: comeca ? 4 : 0,
+                                borderTopRightRadius: termina ? 4 : 0,
+                                borderBottomRightRadius: termina ? 4 : 0,
+                                ml: comeca ? 0 : "-5px",
+                                mr: termina ? 0 : "-5px",
+                                overflow: "hidden",
+                              }}
+                            >
+                              {mostraNome && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    lineHeight: 1,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {evento.title}
+                                </Typography>
+                              )}
+                            </Box>
+                          );
+                        })}
 
                         {/*
                           Uma faixa por pista, SEMPRE — inclusive vazia. O
@@ -470,6 +601,19 @@ export function YearCalendar({
                   }}
                 />
                 <Typography variant="caption">Período de férias</Typography>
+              </Stack>
+              <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                <Box
+                  sx={{
+                    width: 22,
+                    height: 10,
+                    borderRadius: 0.5,
+                    bgcolor: "warning.light",
+                    border: "1px solid",
+                    borderColor: "warning.main",
+                  }}
+                />
+                <Typography variant="caption">Evento institucional</Typography>
               </Stack>
               <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                 <Box
