@@ -1,0 +1,6 @@
+ALTER TABLE "users" ADD CONSTRAINT "users_manager_id_users_id_fk" FOREIGN KEY ("manager_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_paid_by_users_id_fk" FOREIGN KEY ("paid_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_receipt_registered_by_users_id_fk" FOREIGN KEY ("receipt_registered_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_cancelled_by_users_id_fk" FOREIGN KEY ("cancelled_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_rh_approved_by_users_id_fk" FOREIGN KEY ("rh_approved_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_manager_approved_by_users_id_fk" FOREIGN KEY ("manager_approved_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;

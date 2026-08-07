@@ -1,0 +1,15 @@
+ALTER TABLE "vacation_requests" DROP CONSTRAINT "vacation_requests_paid_by_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "vacation_requests" DROP CONSTRAINT "vacation_requests_receipt_registered_by_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "vacation_requests" DROP CONSTRAINT "vacation_requests_cancelled_by_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "vacation_requests" DROP CONSTRAINT "vacation_requests_rh_approved_by_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "vacation_requests" DROP CONSTRAINT "vacation_requests_manager_approved_by_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_paid_by_users_id_fk" FOREIGN KEY ("paid_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_receipt_registered_by_users_id_fk" FOREIGN KEY ("receipt_registered_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_cancelled_by_users_id_fk" FOREIGN KEY ("cancelled_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_rh_approved_by_users_id_fk" FOREIGN KEY ("rh_approved_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vacation_requests" ADD CONSTRAINT "vacation_requests_manager_approved_by_users_id_fk" FOREIGN KEY ("manager_approved_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;

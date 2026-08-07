@@ -225,35 +225,42 @@ export const vacationRequests = pgTable(
      */
     paymentDueDate: date("payment_due_date", { mode: "string" }),
     paidAt: timestamp("paid_at", { withTimezone: true }),
-    paidBy: uuid("paid_by").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * As colunas de autoria desta tabela (`paidBy`, `receiptRegisteredBy`,
+     * `cancelledBy`, `rhApprovedBy`, `managerApprovedBy`) usam o ON DELETE
+     * padrão — NO ACTION —, e não SET NULL: apagar o usuário passa a esbarrar
+     * na constraint em vez de apagar em silêncio QUEM aprovou ou pagou.
+     *
+     * Férias respondem a fiscalização (recibo assinado, prazo do art. 145), e
+     * um registro sem autor não se reconstrói. É o mesmo tratamento que
+     * `broadcasts.created_by` e `notification_settings.updated_by` já tinham.
+     * Desligamento não passa por aqui: o app é soft delete (`isActive`).
+     */
+    paidBy: uuid("paid_by").references(() => users.id),
     /** Recibo de férias assinado — sem ele a empresa fica exposta. */
     receiptSignedAt: timestamp("receipt_signed_at", { withTimezone: true }),
-    receiptRegisteredBy: uuid("receipt_registered_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
+    receiptRegisteredBy: uuid("receipt_registered_by").references(() => users.id),
 
     // --- Repasse à Senior (lotes dos dias 10 e 20) ---
     reportedToSeniorAt: timestamp("reported_to_senior_at", { withTimezone: true }),
 
     // --- Cancelamento / remanejamento ---
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
-    cancelledBy: uuid("cancelled_by").references(() => users.id, { onDelete: "set null" }),
+    cancelledBy: uuid("cancelled_by").references(() => users.id),
     cancelReason: text("cancel_reason"),
 
     /** Status consolidado, derivado das duas aprovações. */
     status: decisionEnum("status").notNull().default("pending"),
 
     rhApproval: decisionEnum("rh_approval").notNull().default("pending"),
-    rhApprovedBy: uuid("rh_approved_by").references(() => users.id, { onDelete: "set null" }),
+    rhApprovedBy: uuid("rh_approved_by").references(() => users.id),
     rhApprovedAt: timestamp("rh_approved_at", { withTimezone: true }),
     rhNote: text("rh_note"),
 
     managerApproval: decisionEnum("manager_approval")
       .notNull()
       .default("pending"),
-    managerApprovedBy: uuid("manager_approved_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
+    managerApprovedBy: uuid("manager_approved_by").references(() => users.id),
     managerApprovedAt: timestamp("manager_approved_at", { withTimezone: true }),
     managerNote: text("manager_note"),
 

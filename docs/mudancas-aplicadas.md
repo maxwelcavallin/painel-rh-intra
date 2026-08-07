@@ -154,21 +154,24 @@ Agora nenhuma entrada de até 6 caracteres vaza dígitos.
 
 **Arquivo:** `src/db/schema.ts`
 
-Adicionado `.references(() => users.id, { onDelete: "set null" })` em 6 colunas que apontam para `users.id` sem constraint:
+Adicionado `.references(() => users.id)` em 6 colunas que apontam para `users.id` sem constraint:
 
-| Coluna                             | Tabela             |
-|------------------------------------|--------------------|
-| `managerId`                        | `users`            |
-| `paidBy`                           | `vacationRequests` |
-| `receiptRegisteredBy`              | `vacationRequests` |
-| `cancelledBy`                      | `vacationRequests` |
-| `rhApprovedBy`                     | `vacationRequests` |
-| `managerApprovedBy`                | `vacationRequests` |
+| Coluna                             | Tabela             | `ON DELETE` |
+|------------------------------------|--------------------|-------------|
+| `managerId`                        | `users`            | `set null`  |
+| `paidBy`                           | `vacationRequests` | `no action` |
+| `receiptRegisteredBy`              | `vacationRequests` | `no action` |
+| `cancelledBy`                      | `vacationRequests` | `no action` |
+| `rhApprovedBy`                     | `vacationRequests` | `no action` |
+| `managerApprovedBy`                | `vacationRequests` | `no action` |
 
-Escolha de `onDelete: "set null"`:
-- **Não usar `cascade`**: deletar um gestor não pode apagar todas as férias que ele aprovou nem os funcionários que ele geria
-- **Não usar `restrict`**: bloquearia deletar usuários que já aprovaram alguma coisa
-- **`set null`** preserva o registro de férias, apenas apaga a referência ao aprovador
+**`managerId` → `set null`.** É um ponteiro operacional, não um registro histórico: quando o gestor sai, o funcionário continua existindo, apenas sem gestor. `cascade` aqui apagaria o subordinado junto — inaceitável.
+
+**As 5 colunas de autoria de `vacationRequests` → `no action`** (o padrão do drizzle quando não se passa `onDelete`). A revisão original sugeriu `set null` para todas, mas isso apaga em silêncio *quem* aprovou, pagou ou cancelou umas férias. Férias respondem a fiscalização — recibo assinado, prazo do art. 145 — e um registro sem autor não se reconstrói. `no action` faz o banco recusar o delete e preservar o rastro.
+
+Isso também alinha com o padrão que o projeto já tinha: `broadcasts.created_by`, `forms.created_by` e `notification_settings.updated_by` são todas `no action`. E o `seed.ts` já foi escrito para esse mundo — apaga `vacationRequests` (linha 89) antes de `users` (linha 90), com o comentário nas linhas 79-81 dizendo explicitamente que colunas de "autor da ação" precisam entrar na ordem de limpeza.
+
+Na prática a constraint quase nunca dispara: o app não faz hard delete de usuário, usa soft delete (`isActive` / `employmentStatus: "desligado"`). O único `delete(users)` do projeto está no seed.
 
 Para `managerId` (auto-referência de `users`), foi necessário importar o tipo `AnyPgColumn` do `drizzle-orm/pg-core`:
 
@@ -180,16 +183,25 @@ managerId: uuid("manager_id").references((): AnyPgColumn => users.id, {
 }),
 ```
 
-### ⚠️ Migration necessária
+### Migration — aplicada
 
-Essas mudanças alteram o schema. Antes de subir para produção:
-
-```bash
-npm run db:generate   # gera a migration em drizzle/
-npm run db:migrate    # aplica no banco
+```
+drizzle/0004_cold_thena.sql   ADD CONSTRAINT nas 6 colunas
+drizzle/0005_sad_wallop.sql   troca as 5 de vacationRequests para no action
 ```
 
-Recomendado revisar a migration gerada antes de aplicar — o Drizzle pode incluir alterações que não são só o `ADD CONSTRAINT`.
+Antes de aplicar foi verificado que não havia órfãos — `ADD CONSTRAINT` falha se alguma coluna guardar um UUID que não existe em `users.id`:
+
+| Coluna                                    | Preenchidos | Órfãos |
+|-------------------------------------------|-------------|--------|
+| `users.manager_id`                        | 9           | 0      |
+| `vacation_requests.paid_by`               | 4           | 0      |
+| `vacation_requests.receipt_registered_by` | 4           | 0      |
+| `vacation_requests.cancelled_by`          | 0           | 0      |
+| `vacation_requests.rh_approved_by`        | 3           | 0      |
+| `vacation_requests.manager_approved_by`   | 3           | 0      |
+
+Essa checagem não é opcional neste projeto: o `migrate.ts` usa o driver `neon-http`, que **não tem transação**. Uma migration que falha no meio fica aplicada pela metade, sem rollback.
 
 ---
 
@@ -460,8 +472,8 @@ Preferi ref+contador em vez de `AbortController` porque o abort não impede a re
 
 ## Checklist antes de subir
 
-1. [ ] `npm run db:generate` — gerar migration para as FKs novas
-2. [ ] Revisar a migration em `drizzle/` antes de aplicar
+1. [x] `npm run db:generate` — migrations `0004` e `0005` geradas
+2. [x] Revisar a migration em `drizzle/` antes de aplicar — feito, e aplicada com `npm run db:migrate`
 3. [ ] Rodar `npm run test:all` (precisa de DB conectado) para validar suite completa
 4. [ ] Testar manualmente:
    - Solicitar férias com abono já usufruído (Bug 1)
