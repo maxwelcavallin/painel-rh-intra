@@ -14,7 +14,7 @@ import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { RefreshCw, Sparkles, TriangleAlert, X } from "lucide-react";
+import { Download, RefreshCw, Sparkles, TriangleAlert, X } from "lucide-react";
 
 import {
   gerarParecerGeralAction,
@@ -22,6 +22,7 @@ import {
   type ParecerGeralState,
   type ParecerPessoaState,
 } from "./actions";
+import { baixarParecer } from "./parecer-html";
 import type { Parecer } from "@/server/parecer";
 
 const RISCO = {
@@ -48,6 +49,7 @@ function DialogoParecer({
   parecer,
   marcadores,
   rodape,
+  rodapeTexto,
   regerar,
 }: {
   aberto: boolean;
@@ -58,8 +60,23 @@ function DialogoParecer({
   parecer: Parecer | null;
   marcadores: Marcador[];
   rodape: React.ReactNode;
+  /** Mesmo conteúdo do rodapé, em texto puro — o React não vai para o papel. */
+  rodapeTexto: string | null;
   regerar: () => void;
 }) {
+  const [bloqueado, setBloqueado] = useState(false);
+
+  function baixar() {
+    if (!parecer) return;
+    const ok = baixarParecer({
+      subtitulo,
+      marcadores: marcadores.map((m) => m.label),
+      parecer,
+      rodape: rodapeTexto,
+    });
+    setBloqueado(!ok);
+  }
+
   return (
     <Dialog open={aberto} onClose={aoFechar} maxWidth="sm" fullWidth scroll="paper">
       <DialogTitle sx={{ pr: 6 }}>
@@ -171,6 +188,13 @@ function DialogoParecer({
 
             <Divider />
 
+            {bloqueado && (
+              <Alert severity="warning">
+                O navegador bloqueou a janela do parecer. Libere o pop-up para
+                este site e clique em Baixar de novo.
+              </Alert>
+            )}
+
             <Stack
               direction="row"
               spacing={1}
@@ -181,14 +205,23 @@ function DialogoParecer({
                   ? "Parecer redigido por IA a partir de números apurados pelo sistema. Prazos e saldos são calculados em código, não pelo modelo — confira antes de comunicar."
                   : "IA indisponível no momento: este parecer foi montado direto dos números apurados pelo sistema."}
               </Typography>
-              <Button
-                size="small"
-                onClick={regerar}
-                startIcon={<RefreshCw size={14} />}
-                sx={{ flex: "none" }}
-              >
-                Gerar de novo
-              </Button>
+              <Stack direction="row" spacing={0.5} sx={{ flex: "none" }}>
+                <Button
+                  size="small"
+                  onClick={regerar}
+                  startIcon={<RefreshCw size={14} />}
+                >
+                  Gerar de novo
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={baixar}
+                  startIcon={<Download size={14} />}
+                >
+                  Baixar
+                </Button>
+              </Stack>
             </Stack>
           </Stack>
         )}
@@ -248,6 +281,13 @@ export function ParecerGeralButton() {
                   : []),
               ]
             : []
+        }
+        rodapeTexto={
+          f && f.concentracaoPorMes.length > 0
+            ? `Agenda dos próximos meses — ${f.concentracaoPorMes
+                .map((m) => `${m.mes}: ${m.pessoas.length} pessoa(s)`)
+                .join("; ")}.`
+            : null
         }
         rodape={
           f && f.concentracaoPorMes.length > 0 ? (
@@ -331,6 +371,13 @@ export function ParecerPessoaButton({
                   : []),
               ]
             : []
+        }
+        rodapeTexto={
+          f
+            ? `Admissão em ${f.admissao}` +
+              (f.gestor ? ` · gestor: ${f.gestor}` : "") +
+              ` · ${f.diasUsufruidos} dia(s) usufruídos em ${f.historico.length} solicitação(ões).`
+            : null
         }
         rodape={
           f ? (
