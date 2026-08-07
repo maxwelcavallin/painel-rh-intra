@@ -6,7 +6,13 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 import { requireSession } from "@/lib/dal";
-import { COMPANY_NOTICE_DAYS } from "@/lib/clt";
+import {
+  addDays,
+  COMPANY_NOTICE_DAYS,
+  MIN_ANY_FRACTION,
+  todayISOBrazil,
+} from "@/lib/clt";
+import { getHolidaysForRange } from "@/server/holidays";
 import { listUpcomingEventsFor } from "@/server/institutional-events";
 import { listTeamVacations } from "@/server/vacations";
 
@@ -22,9 +28,15 @@ export default async function SolicitarPage() {
   // pedido explícito do RH, para a escolha já nascer consciente do impacto.
   // Os eventos institucionais entram pelo mesmo motivo, e com o mesmo peso:
   // avisam, não impedem.
-  const [team, eventos] = await Promise.all([
+  const hoje = todayISOBrazil();
+
+  const [team, eventos, feriados] = await Promise.all([
     listTeamVacations(user.id),
-    listUpcomingEventsFor(user.sector, new Date().toISOString().slice(0, 10)),
+    listUpcomingEventsFor(user.sector, hoje),
+    // Os mesmos feriados que a análise usa vão para o calendário do formulário —
+    // é o que faz o seletor bloquear exatamente os dias que o servidor reprova.
+    // Dois anos à frente cobrem qualquer data que o seletor deixa alcançar.
+    getHolidaysForRange(hoje, addDays(hoje, 730)),
   ]);
 
   return (
@@ -40,16 +52,18 @@ export default async function SolicitarPage() {
       </Stack>
 
       <Alert severity="info">
-        A solicitação é analisada na hora: o sistema confere saldo do período
-        aquisitivo, abono pecuniário, sobreposição com a equipe e as vedações da
-        CLT — inclusive a do art. 134, §3º, que proíbe iniciar férias nos dois
-        dias que antecedem feriado ou o repouso semanal. A política interna pede{" "}
-        {COMPANY_NOTICE_DAYS} dias de antecedência.
+        O calendário já vem travado nas regras: só aparecem datas de início
+        válidas pelo art. 134, §3º da CLT — nada de começar em feriado, no
+        domingo, nem nos dois dias que antecedem um deles. Entram os feriados
+        nacionais, o estadual do Paraná e os municipais de Curitiba. O período
+        mínimo é de {MIN_ANY_FRACTION} dias corridos (art. 134, §1º) e a política
+        interna pede {COMPANY_NOTICE_DAYS} dias de antecedência. Saldo do período
+        aquisitivo, abono e sobreposição com a equipe são conferidos no envio.
       </Alert>
 
       <Card>
         <CardContent sx={{ p: 3 }}>
-          <RequestForm team={team} eventos={eventos} />
+          <RequestForm team={team} eventos={eventos} feriados={feriados} />
         </CardContent>
       </Card>
     </Stack>

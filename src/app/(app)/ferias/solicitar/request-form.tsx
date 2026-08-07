@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
@@ -16,10 +16,17 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
-import { CalendarClock, ChevronDown, ChevronUp, Send, Users } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronUp, PartyPopper, Send, Users } from "lucide-react";
 
-import { COMPANY_NOTICE_DAYS, MAX_ABONO_DAYS, MAX_DAYS_PER_PERIOD } from "@/lib/clt";
+import {
+  COMPANY_NOTICE_DAYS,
+  MAX_ABONO_DAYS,
+  MAX_DAYS_PER_PERIOD,
+  MIN_ANY_FRACTION,
+  vacationStartBlock,
+} from "@/lib/clt";
 import type { InstitutionalEvent } from "@/db/schema";
+import type { Holiday } from "@/server/holidays";
 
 import { submitVacationRequestAction, type RequestState } from "../actions";
 
@@ -29,6 +36,10 @@ function toISO(date: Date | null): string {
 
 function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string) {
   return aStart <= bEnd && bStart <= aEnd;
+}
+
+function formatBR(iso: string) {
+  return iso.split("-").reverse().join("/");
 }
 
 export type TeamVacation = {
@@ -43,9 +54,11 @@ export type TeamVacation = {
 export function RequestForm({
   team,
   eventos,
+  feriados,
 }: {
   team: TeamVacation[];
   eventos: InstitutionalEvent[];
+  feriados: Holiday[];
 }) {
   const [state, action, pending] = useActionState<RequestState, FormData>(
     submitVacationRequestAction,
@@ -64,6 +77,48 @@ export function RequestForm({
 
   // A política interna pede 40 dias; a data mínima do seletor já reflete isso.
   const minStart = addDays(new Date(), COMPANY_NOTICE_DAYS);
+
+  const datasDeFeriado = useMemo(
+    () => new Set(feriados.map((f) => f.date)),
+    [feriados],
+  );
+
+  /**
+   * Trava do calendário: o mesmo predicado que o servidor usa para reprovar
+   * (`vacationStartBlock`) decide aqui quais dias sequer aparecem clicáveis.
+   *
+   * Antes o formulário deixava escolher qualquer dia e a reprovação vinha
+   * depois do envio — a pessoa descobria a regra errando. Vindo da mesma
+   * função, calendário e análise não têm como divergir.
+   */
+  const inicioBloqueado = (date: Date) =>
+    vacationStartBlock(format(date, "yyyy-MM-dd"), datasDeFeriado) !== null;
+
+  /**
+   * O término é derivado do início: nunca menos que a fração mínima da CLT,
+   * nunca mais que os 30 dias do período aquisitivo. Não existe férias de 1 dia,
+   * então o seletor não oferece essa data.
+   */
+  const minEnd = start ? addDays(start, MIN_ANY_FRACTION - 1) : minStart;
+  const maxEnd = start ? addDays(start, MAX_DAYS_PER_PERIOD - 1) : undefined;
+
+  // Mexer no início pode invalidar um término já escolhido. Limpar é melhor do
+  // que deixar na tela uma data que o seletor já não aceitaria.
+  function escolherInicio(date: Date | null) {
+    setStart(date);
+    if (!date || !end) return;
+    const novoMin = addDays(date, MIN_ANY_FRACTION - 1);
+    const novoMax = addDays(date, MAX_DAYS_PER_PERIOD - 1);
+    if (end < novoMin || end > novoMax) setEnd(null);
+  }
+
+  // Feriados dentro do período escolhido. Não impedem nada e não esticam as
+  // férias — os dias são corridos —, mas é a informação que faz a pessoa
+  // reconsiderar a data enquanto ela ainda pode mudar.
+  const feriadosNoPeriodo =
+    start && end
+      ? feriados.filter((f) => f.date >= toISO(start) && f.date <= toISO(end))
+      : [];
 
   // Quem da equipe já está fora no período escolhido — mostrado ANTES de enviar,
   // que é quando a informação ainda muda a decisão.
@@ -123,14 +178,15 @@ export function RequestForm({
             <DatePicker
               label="Início das férias"
               value={start}
-              onChange={setStart}
+              onChange={escolherInicio}
               minDate={minStart}
+              shouldDisableDate={inicioBloqueado}
               format="dd/MM/yyyy"
               slotProps={{
                 textField: {
                   fullWidth: true,
                   required: true,
-                  helperText: `Mínimo de ${COMPANY_NOTICE_DAYS} dias de antecedência`,
+                  helperText: `A partir de ${COMPANY_NOTICE_DAYS} dias, em dia útil`,
                 },
               }}
             />
@@ -140,9 +196,19 @@ export function RequestForm({
               label="Término das férias"
               value={end}
               onChange={setEnd}
-              minDate={start ?? minStart}
+              minDate={minEnd}
+              maxDate={maxEnd}
+              disabled={!start}
               format="dd/MM/yyyy"
-              slotProps={{ textField: { fullWidth: true, required: true } }}
+              slotProps={{
+                textField: {
+                  fullWidth: true,
+                  required: true,
+                  helperText: start
+                    ? `De ${MIN_ANY_FRACTION} a ${MAX_DAYS_PER_PERIOD} dias corridos`
+                    : "Escolha o início primeiro",
+                },
+              }}
             />
           </Grid>
         </Grid>
@@ -158,6 +224,29 @@ export function RequestForm({
               </>
             )}
           </Typography>
+        )}
+
+        {feriadosNoPeriodo.length > 0 && (
+          <Alert severity="info" icon={<PartyPopper size={18} />}>
+            <AlertTitle>
+              {feriadosNoPeriodo.length === 1
+                ? "Cai 1 feriado dentro do período"
+                : `Caem ${feriadosNoPeriodo.length} feriados dentro do período`}
+            </AlertTitle>
+            <Stack spacing={0.5}>
+              {feriadosNoPeriodo.map((f) => (
+                <Typography key={f.date} variant="body2">
+                  {formatBR(f.date)} — {f.name} ({f.scope}
+                  {f.optional ? ", ponto facultativo" : ""})
+                </Typography>
+              ))}
+            </Stack>
+            <Typography variant="caption" sx={{ display: "block", mt: 1 }}>
+              Férias são contadas em dias corridos, então o feriado não estende o
+              período nem devolve dias. Se quiser aproveitá-lo como folga, vale
+              escolher outra data.
+            </Typography>
+          </Alert>
         )}
 
         {eventosNoPeriodo.length > 0 && (
@@ -318,7 +407,15 @@ export function RequestForm({
             type="submit"
             variant="contained"
             size="large"
-            disabled={pending || !start || !end || excede || (abono && abonoDays < 1)}
+            disabled={
+              pending ||
+              !start ||
+              !end ||
+              // O seletor já impede, mas a trava não pode depender só dele.
+              (days ?? 0) < MIN_ANY_FRACTION ||
+              excede ||
+              (abono && abonoDays < 1)
+            }
             startIcon={<Send size={18} />}
           >
             {pending ? "Analisando…" : "Enviar solicitação"}

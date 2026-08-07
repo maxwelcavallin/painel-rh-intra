@@ -24,7 +24,18 @@ type Vacation = {
   end: string;
   days: number;
 };
-type Holiday = { date: string; name: string; scope: string };
+type Holiday = {
+  date: string;
+  name: string;
+  scope: string;
+  /** Ponto facultativo (Carnaval, aniversário de Curitiba) — não é feriado de lei. */
+  optional?: boolean;
+};
+
+/** "feriado municipal" / "ponto facultativo municipal". */
+function tipoDoFeriado(h: Holiday) {
+  return `${h.optional ? "ponto facultativo" : "feriado"} ${h.scope}`;
+}
 type Birthday = { id: string; name: string; monthDay: string };
 type CalendarEvent = {
   id: string;
@@ -331,7 +342,11 @@ export function YearCalendar({
                       `Evento: ${noEvento
                         .map((e) => e.title + (e.sector ? ` (${e.sector})` : ""))
                         .join(", ")}`,
-                    holiday && `Feriado ${holiday.scope}: ${holiday.name}`,
+                    holiday &&
+                      `${tipoDoFeriado(holiday)}: ${holiday.name}`.replace(
+                        /^./,
+                        (c) => c.toUpperCase(),
+                      ),
                     onVacation.length > 0 &&
                       `De férias: ${onVacation.map((v) => v.name).join(", ")}`,
                     cakes.length > 0 &&
@@ -696,7 +711,7 @@ export function YearCalendar({
                         size="small"
                         color="error"
                         variant="outlined"
-                        label={`${h.date.slice(8)}/${h.date.slice(5, 7)} · ${h.name} (${h.scope})`}
+                        label={`${h.date.slice(8)}/${h.date.slice(5, 7)} · ${h.name} (${tipoDoFeriado(h)})`}
                       />
                     ))}
                   </Stack>

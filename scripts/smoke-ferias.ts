@@ -100,6 +100,22 @@ async function main() {
   if (!injecao.ok) throw new Error(injecao.error);
   check("segue reprovado apesar da injeção", injecao.status, "rejected");
 
+  console.log("\n— Art. 134 §3º: início EM CIMA de feriado deve reprovar");
+  // 12/10/2026 é uma segunda-feira E o feriado de N. Sra. Aparecida. Passava
+  // por todas as checagens antigas — o pedido virava pendente com um parecer
+  // dizendo que não havia impedimento nenhum.
+  const feriado = await createVacationRequest({
+    userId: bruno.id,
+    startDate: "2026-10-12",
+    endDate: "2026-10-21",
+    abonoDays: 0,
+    advance13th: false,
+    notes: null,
+  });
+  if (!feriado.ok) throw new Error(feriado.error);
+  check("status gravado", feriado.status, "rejected");
+  contains("cita o feriado", feriado.reasoning, "Aparecida");
+
   console.log("\n— Início numa SEGUNDA-FEIRA deve seguir para aprovação humana");
   const segunda = await createVacationRequest({
     userId: bruno.id,

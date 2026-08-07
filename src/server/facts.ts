@@ -47,6 +47,17 @@ function todayISO(): string {
   return todayISOBrazil();
 }
 
+/**
+ * "o feriado nacional Natal" / "o ponto facultativo nacional Carnaval".
+ *
+ * Chamar ponto facultativo de feriado numa mensagem que REPROVA a solicitação
+ * seria dar informação errada sobre a lei justamente onde ela é citada.
+ */
+function describeHoliday(holiday: Holiday): string {
+  const kind = holiday.optional ? "o ponto facultativo" : "o feriado";
+  return `${kind} ${holiday.scope} "${holiday.name}"`;
+}
+
 /* ------------------------------------------------------------------ */
 /* Tipo do resultado                                                   */
 /* ------------------------------------------------------------------ */
@@ -79,6 +90,8 @@ export type VacationFacts = {
     beforeFirstAcquisitivePeriod: boolean;
     selfOverlaps: boolean;
     exceedsAnnualLimit: boolean;
+    startsOnHoliday: boolean;
+    startsOnWeeklyRest: boolean;
     startsWithinTwoDaysOfHoliday: boolean;
     startsWithinTwoDaysOfWeeklyRest: boolean;
     belowMinimumFraction: boolean;
@@ -86,6 +99,8 @@ export type VacationFacts = {
     teamOverlap: boolean;
   };
   details: {
+    /** Feriado em cima do próprio dia de início, se houver. */
+    startHoliday: Holiday | null;
     /** Feriado que disparou o bloqueio, se houver. */
     blockingHoliday: Holiday | null;
     overlappingOwnRequests: { start: string; end: string; status: string }[];
@@ -286,22 +301,53 @@ export async function buildVacationFacts(params: {
     addDays(endDate > startDate ? endDate : startDate, 5),
   );
 
+  const startWeekday = weekdayOf(startDate);
+
+  /*
+   * O início precisa ser dia útil. São quatro medições independentes, e mais de
+   * uma pode valer ao mesmo tempo — cada uma vira seu próprio conflito, para a
+   * pessoa ver todos os motivos de uma vez em vez de descobrir um por tentativa.
+   */
+
+  // 1. O início cai EM CIMA de um feriado. Faltava, e era por aqui que passava
+  //    pedido começando no 12/10 ou no 25/12.
+  const startHoliday = holidays.find((h) => h.date === startDate) ?? null;
+  const startsOnHoliday = startHoliday !== null;
+  if (startHoliday) {
+    conflicts.push(
+      `${formatBR(startDate)} (${WEEKDAY_NAME[startWeekday]}) é ` +
+        `${describeHoliday(startHoliday)}. As férias precisam começar em dia útil — ` +
+        `começar num dia de folga consumiria um dia de férias que já seria de descanso ` +
+        `(art. 134, §3º da CLT).`,
+    );
+  }
+
+  // 2. O início cai no próprio dia de repouso semanal remunerado.
+  const startsOnWeeklyRest = startWeekday === WEEKLY_REST_DAY;
+  if (startsOnWeeklyRest) {
+    conflicts.push(
+      `O início em ${formatBR(startDate)} cai num ${WEEKDAY_NAME[WEEKLY_REST_DAY]}, ` +
+        `dia de repouso semanal remunerado. As férias precisam começar em dia útil ` +
+        `(art. 134, §3º da CLT).`,
+    );
+  }
+
+  // 3. Feriado nos dois dias seguintes ao início — a vedação literal do §3º.
   const twoDaysBefore = twoDaysAfter(startDate);
   const blockingHoliday =
     holidays.find((h) => twoDaysBefore.includes(h.date)) ?? null;
 
   const startsWithinTwoDaysOfHoliday = blockingHoliday !== null;
-  if (startsWithinTwoDaysOfHoliday && blockingHoliday) {
+  if (blockingHoliday) {
     conflicts.push(
-      `O início em ${formatBR(startDate)} (${WEEKDAY_NAME[weekdayOf(startDate)]}) cai nos dois dias que antecedem ` +
-        `o feriado ${blockingHoliday.scope} "${blockingHoliday.name}" (${formatBR(blockingHoliday.date)}). ` +
+      `O início em ${formatBR(startDate)} (${WEEKDAY_NAME[startWeekday]}) cai nos dois dias que antecedem ` +
+        `${describeHoliday(blockingHoliday)} (${formatBR(blockingHoliday.date)}). ` +
         `Art. 134, §3º da CLT veda o início das férias nesse período.`,
     );
   }
 
-  // Dois dias antes do DSR (domingo) = sexta e sábado.
-  // Com a leitura estrita, o sábado também conta como descanso → quinta entra.
-  const startWeekday = weekdayOf(startDate);
+  // 4. Dois dias antes do DSR (domingo) = sexta e sábado.
+  //    Com a leitura estrita, o sábado também conta como descanso → quinta entra.
   const startsWithinTwoDaysOfWeeklyRest =
     blockedStartWeekdays().includes(startWeekday);
 
@@ -429,6 +475,8 @@ export async function buildVacationFacts(params: {
       beforeFirstAcquisitivePeriod,
       selfOverlaps,
       exceedsAnnualLimit,
+      startsOnHoliday,
+      startsOnWeeklyRest,
       startsWithinTwoDaysOfHoliday,
       startsWithinTwoDaysOfWeeklyRest,
       belowMinimumFraction,
@@ -436,6 +484,7 @@ export async function buildVacationFacts(params: {
       teamOverlap,
     },
     details: {
+      startHoliday,
       blockingHoliday,
       overlappingOwnRequests,
       teammatesOnVacation,

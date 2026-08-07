@@ -160,6 +160,66 @@ export function twoDaysAfter(startISO: string): [string, string] {
   return [addDays(startISO, 1), addDays(startISO, 2)];
 }
 
+/** Feriado que cai nos dois dias seguintes ao início, se houver. */
+export function holidayBlockingStart(
+  startISO: string,
+  holidays: Set<string>,
+): string | null {
+  return twoDaysAfter(startISO).find((d) => holidays.has(d)) ?? null;
+}
+
+/**
+ * O início cai no próprio dia de repouso semanal.
+ *
+ * O §3º fala dos dois dias que ANTECEDEM o descanso, mas a razão da regra é que
+ * as férias comecem num dia de trabalho: começar no próprio dia de folga
+ * consome um dia de férias que a pessoa já teria de descanso. Doutrina e
+ * jurisprudência trabalhista tratam os dois casos juntos, e o resultado prático
+ * é o mesmo — o início precisa ser dia útil.
+ */
+export function startsOnWeeklyRest(startISO: string): boolean {
+  return weekdayOf(startISO) === WEEKLY_REST_DAY;
+}
+
+/** O início cai em cima de um feriado. Mesma lógica de `startsOnWeeklyRest`. */
+export function startsOnHoliday(
+  startISO: string,
+  holidays: Set<string>,
+): boolean {
+  return holidays.has(startISO);
+}
+
+export type StartBlockReason =
+  | "holiday"
+  | "weekly-rest"
+  | "before-holiday"
+  | "before-weekly-rest";
+
+/**
+ * Por que este dia não pode ser o início das férias — ou `null` se puder.
+ *
+ * É o predicado único do início válido: o formulário desabilita o dia no
+ * calendário com ele, e `facts.ts` reprova a solicitação com ele. Duas
+ * implementações da mesma regra acabariam divergindo, e a divergência apareceria
+ * como um dia que o calendário deixa escolher e o sistema reprova em seguida.
+ *
+ * A ordem é a da mensagem mais específica primeiro: cair EM cima do feriado
+ * explica melhor que cair na véspera dele.
+ */
+export function vacationStartBlock(
+  startISO: string,
+  holidays: Set<string>,
+  strictSaturdayAsRest = STRICT_SATURDAY_AS_REST,
+): StartBlockReason | null {
+  if (startsOnHoliday(startISO, holidays)) return "holiday";
+  if (startsOnWeeklyRest(startISO)) return "weekly-rest";
+  if (holidayBlockingStart(startISO, holidays)) return "before-holiday";
+  if (startsWithinTwoDaysOfWeeklyRest(startISO, strictSaturdayAsRest)) {
+    return "before-weekly-rest";
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Período aquisitivo                                                  */
 /* ------------------------------------------------------------------ */

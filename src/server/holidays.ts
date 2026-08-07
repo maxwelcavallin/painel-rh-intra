@@ -23,6 +23,15 @@ export type Holiday = {
   date: string;
   name: string;
   scope: "nacional" | "estadual" | "municipal";
+  /**
+   * Ponto facultativo, não feriado de lei (Carnaval e aniversário de Curitiba).
+   *
+   * Continua BLOQUEANDO o início das férias — a empresa não abre nesses dias, e
+   * começar férias num dia em que ninguém trabalha é exatamente o dano que o
+   * art. 134, §3º evita. O campo existe para a mensagem e o calendário
+   * chamarem a coisa pelo nome certo, não para afrouxar a regra.
+   */
+  optional?: boolean;
 };
 
 function iso(year: number, month: number, day: number): string {
@@ -35,8 +44,10 @@ export function nationalHolidaysLocal(year: number): Holiday[] {
 
   return [
     { date: iso(year, 1, 1), name: "Confraternização Universal", scope: "nacional" },
-    { date: addDaysToDate(easter, -48), name: "Carnaval", scope: "nacional" },
-    { date: addDaysToDate(easter, -47), name: "Carnaval", scope: "nacional" },
+    // Carnaval é ponto facultativo federal, não feriado de lei — mas a empresa
+    // não abre. Ver a nota em `Holiday.optional`.
+    { date: addDaysToDate(easter, -48), name: "Carnaval", scope: "nacional", optional: true },
+    { date: addDaysToDate(easter, -47), name: "Carnaval", scope: "nacional", optional: true },
     { date: addDaysToDate(easter, -2), name: "Sexta-feira Santa", scope: "nacional" },
     { date: addDaysToDate(easter, 60), name: "Corpus Christi", scope: "nacional" },
     { date: iso(year, 4, 21), name: "Tiradentes", scope: "nacional" },
@@ -52,14 +63,35 @@ export function nationalHolidaysLocal(year: number): Holiday[] {
 
 /**
  * Estadual (PR) e municipal (Curitiba).
- * Datas fixas — valem para qualquer ano. Corpus Christi de Curitiba coincide
- * com o nacional móvel e já vem de `nationalHolidaysLocal`.
+ *
+ * A sede da empresa é em Curitiba, então estes valem para todo mundo.
+ *
+ * Curitiba tem TRÊS feriados municipais, todos religiosos, fixados pela Lei
+ * Municipal 3.015/67: Sexta-feira da Paixão (que já é nacional), Corpus Christi
+ * e 8 de setembro, dia da padroeira. Corpus Christi entra aqui de propósito,
+ * mesmo já vindo da lista nacional: no plano federal ele é ponto facultativo, e
+ * é a lei municipal que o torna feriado de verdade aqui. Declarado como
+ * municipal, o bloqueio continua de pé mesmo se a BrasilAPI parar de devolvê-lo.
+ *
+ * O aniversário da cidade (29/03) NÃO é feriado — é ponto facultativo. Fica na
+ * lista marcado como tal: bloqueia o início das férias, mas não se apresenta
+ * como feriado de lei.
+ *
+ * Estadual: 19/12, Data Magna do Paraná (Lei Estadual 18.384/2014).
  */
 export function regionalHolidays(year: number): Holiday[] {
+  const easter = easterSunday(year);
+
   return [
     {
       date: iso(year, 3, 29),
       name: "Aniversário de Curitiba",
+      scope: "municipal",
+      optional: true,
+    },
+    {
+      date: addDaysToDate(easter, 60),
+      name: "Corpus Christi",
       scope: "municipal",
     },
     {
@@ -112,22 +144,59 @@ export function mergeHolidays(lists: Holiday[][]): Holiday[] {
 }
 
 /**
- * Lista consolidada para o ano. Nunca lança: se a rede falhar, cai no
- * cálculo local para que o bloqueio legal continue valendo.
+ * Reaplica o `optional` das tabelas locais sobre a lista já mesclada.
+ *
+ * A BrasilAPI devolve tudo como feriado, ponto facultativo incluído. Sem esta
+ * passagem, a terça de Carnaval (que vem da API e vence o empate) sairia como
+ * feriado de lei e a segunda (que só existe no cálculo local) como ponto
+ * facultativo — o mesmo Carnaval descrito de dois jeitos na mesma tela, e a
+ * mensagem de reprovação citando a lei errada em metade dos casos.
+ */
+function applyOptionalFlag(holidays: Holiday[], year: number): Holiday[] {
+  const optionalDates = new Set(
+    [...nationalHolidaysLocal(year), ...regionalHolidays(year)]
+      .filter((h) => h.optional)
+      .map((h) => h.date),
+  );
+
+  return holidays.map((h) =>
+    optionalDates.has(h.date) ? { ...h, optional: true } : h,
+  );
+}
+
+/**
+ * Lista consolidada para o ano. Nunca lança: se a rede falhar, o cálculo local
+ * sustenta o bloqueio legal sozinho.
+ *
+ * A ordem das listas importa — `mergeHolidays` deduplica por data e a PRIMEIRA
+ * ocorrência vence:
+ *
+ * 1. Regional, porque a lei local é mais específica. É o que faz Corpus Christi
+ *    aparecer como feriado municipal de Curitiba, e não como o ponto facultativo
+ *    federal que a BrasilAPI devolve.
+ * 2. BrasilAPI, dona dos nomes oficiais dos feriados nacionais.
+ * 3. Cálculo local, sempre — nunca como substituto, sempre como COMPLEMENTO.
+ *    A BrasilAPI devolve o Carnaval só na terça; sem esta terceira lista a
+ *    segunda-feira de Carnaval sumia da análise justamente nos anos em que a
+ *    API respondia. Era o buraco que deixava passar início de férias na véspera.
  */
 export async function getHolidays(year: number): Promise<Holiday[]> {
   const fromApi = await fetchNationalHolidays(year);
 
   if (!fromApi) {
     console.warn(
-      `[holidays] BrasilAPI indisponível para ${year}; usando cálculo local.`,
+      `[holidays] BrasilAPI indisponível para ${year}; usando só o cálculo local.`,
     );
   }
 
-  return mergeHolidays([
-    fromApi ?? nationalHolidaysLocal(year),
-    regionalHolidays(year),
-  ]);
+  return applyOptionalFlag(
+    mergeHolidays([
+      regionalHolidays(year),
+      fromApi ?? [],
+      nationalHolidaysLocal(year),
+    ]),
+    year,
+  );
 }
 
 /** Feriados cobrindo o intervalo inteiro, atravessando a virada de ano. */
