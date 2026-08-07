@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { users, vacationRequests } from "@/db/schema";
 
 import { getHolidays, type Holiday } from "./holidays";
+import { listEventsForYear } from "./institutional-events";
 
 /**
  * Calendário: férias APROVADAS, feriados e aniversários.
@@ -31,14 +32,24 @@ export type BirthdayEntry = {
   monthDay: string;
 };
 
+export type EventEntry = {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  /** NULL = empresa inteira. */
+  sector: string | null;
+};
+
 export type CalendarData = {
   vacations: VacationEntry[];
   holidays: Holiday[];
   birthdays: BirthdayEntry[];
+  events: EventEntry[];
 };
 
 export async function getCalendarData(year: number): Promise<CalendarData> {
-  const [vacationRows, holidays, birthdayRows] = await Promise.all([
+  const [vacationRows, holidays, birthdayRows, eventRows] = await Promise.all([
     db
       .select({
         id: vacationRequests.id,
@@ -61,6 +72,10 @@ export async function getCalendarData(year: number): Promise<CalendarData> {
       .from(users)
       .where(and(eq(users.isActive, true), isNotNull(users.birthDate)))
       .orderBy(users.name),
+
+    // Sem recorte por setor: o calendário é a visão de convivência da empresa,
+    // e saber que o setor vizinho está em inventário é justamente o ponto.
+    listEventsForYear(year),
   ]);
 
   return {
@@ -76,5 +91,12 @@ export async function getCalendarData(year: number): Promise<CalendarData> {
         name: b.name,
         monthDay: b.birthDate!.slice(5),
       })),
+    events: eventRows.map((e) => ({
+      id: e.id,
+      title: e.title,
+      startDate: e.startDate,
+      endDate: e.endDate,
+      sector: e.sector,
+    })),
   };
 }

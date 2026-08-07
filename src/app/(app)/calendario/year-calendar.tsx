@@ -12,7 +12,7 @@ import Typography from "@mui/material/Typography";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import type { Theme } from "@mui/material/styles";
-import { Cake, CalendarDays, Plane } from "lucide-react";
+import { Cake, CalendarClock, CalendarDays, Plane } from "lucide-react";
 
 import { todayISOBrazil } from "@/lib/clt";
 
@@ -26,6 +26,13 @@ type Vacation = {
 };
 type Holiday = { date: string; name: string; scope: string };
 type Birthday = { id: string; name: string; monthDay: string };
+type CalendarEvent = {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  sector: string | null;
+};
 
 const MONTHS = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -105,11 +112,13 @@ export function YearCalendar({
   vacations,
   holidays,
   birthdays,
+  events,
 }: {
   year: number;
   vacations: Vacation[];
   holidays: Holiday[];
   birthdays: Birthday[];
+  events: CalendarEvent[];
 }) {
   const [month, setMonth] = useState(new Date().getMonth());
   const hoje = todayISOBrazil();
@@ -164,11 +173,19 @@ export function YearCalendar({
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 
+  const primeiroDoMes = iso(year, month, 1);
+  const ultimoDoMes = iso(year, month, daysInMonth);
+
   const monthHolidays = holidays.filter(
     (h) => Number(h.date.slice(5, 7)) === month + 1,
   );
   const monthBirthdays = birthdays.filter(
     (b) => Number(b.monthDay.slice(0, 2)) === month + 1,
+  );
+  // Um evento pode atravessar meses, então não basta comparar o mês do início:
+  // entra se o intervalo encostar em qualquer dia deste mês.
+  const monthEvents = events.filter(
+    (e) => e.startDate <= ultimoDoMes && e.endDate >= primeiroDoMes,
   );
   const noMes = vacations.filter((v) => laneOf.has(v.id));
 
@@ -487,10 +504,41 @@ export function YearCalendar({
         </CardContent>
       </Card>
 
-      {(monthHolidays.length > 0 || monthBirthdays.length > 0) && (
+      {(monthHolidays.length > 0 ||
+        monthBirthdays.length > 0 ||
+        monthEvents.length > 0) && (
         <Card variant="outlined">
           <CardContent>
             <Stack spacing={1.5}>
+              {monthEvents.length > 0 && (
+                <Box>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1 }}>
+                    <CalendarClock size={15} />
+                    <Typography variant="subtitle2">
+                      Eventos institucionais
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
+                    {monthEvents.map((e) => (
+                      <Chip
+                        key={e.id}
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        label={
+                          `${e.startDate.slice(8)}/${e.startDate.slice(5, 7)}` +
+                          (e.endDate === e.startDate
+                            ? ""
+                            : ` a ${e.endDate.slice(8)}/${e.endDate.slice(5, 7)}`) +
+                          ` · ${e.title}` +
+                          (e.sector ? ` (${e.sector})` : "")
+                        }
+                      />
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+
               {monthHolidays.length > 0 && (
                 <Box>
                   <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 1 }}>

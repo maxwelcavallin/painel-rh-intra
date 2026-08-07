@@ -7,6 +7,7 @@ import Typography from "@mui/material/Typography";
 
 import { requireSession } from "@/lib/dal";
 import { COMPANY_NOTICE_DAYS } from "@/lib/clt";
+import { listUpcomingEventsFor } from "@/server/institutional-events";
 import { listTeamVacations } from "@/server/vacations";
 
 import { RequestForm } from "./request-form";
@@ -19,7 +20,12 @@ export default async function SolicitarPage() {
 
   // A pessoa vê a programação da equipe ANTES de escolher a data — foi um
   // pedido explícito do RH, para a escolha já nascer consciente do impacto.
-  const team = await listTeamVacations(user.id);
+  // Os eventos institucionais entram pelo mesmo motivo, e com o mesmo peso:
+  // avisam, não impedem.
+  const [team, eventos] = await Promise.all([
+    listTeamVacations(user.id),
+    listUpcomingEventsFor(user.sector, new Date().toISOString().slice(0, 10)),
+  ]);
 
   return (
     <Stack spacing={3} sx={{ maxWidth: 760 }}>
@@ -43,7 +49,7 @@ export default async function SolicitarPage() {
 
       <Card>
         <CardContent sx={{ p: 3 }}>
-          <RequestForm team={team} />
+          <RequestForm team={team} eventos={eventos} />
         </CardContent>
       </Card>
     </Stack>

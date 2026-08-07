@@ -28,6 +28,7 @@ const OWN_TABLES = new Set([
   "broadcast_deliveries",
   "forms",
   "form_responses",
+  "institutional_events",
 ]);
 
 /**

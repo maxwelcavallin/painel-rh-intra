@@ -11,7 +11,7 @@ import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { Check, Sparkles, TriangleAlert, X } from "lucide-react";
+import { CalendarClock, Check, Sparkles, TriangleAlert, X } from "lucide-react";
 
 import { decideVacationAction, type DecideState } from "../ferias/actions";
 
@@ -42,7 +42,14 @@ function formatBR(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-export function DecisionCard({ request }: { request: PendingRequest }) {
+export function DecisionCard({
+  request,
+  eventos,
+}: {
+  request: PendingRequest;
+  /** Eventos institucionais que cruzam este período. Vazio na maioria das vezes. */
+  eventos: string[];
+}) {
   const [state, action, pending] = useActionState<DecideState, FormData>(
     decideVacationAction,
     {},
@@ -119,6 +126,19 @@ export function DecisionCard({ request }: { request: PendingRequest }) {
                   </Typography>
                 ))}
               </Stack>
+            </Alert>
+          )}
+
+          {eventos.length > 0 && (
+            <Alert severity="warning" icon={<CalendarClock size={18} />}>
+              <Typography variant="body2">
+                Cai em {eventos.length === 1 ? "evento" : "eventos"} da empresa:{" "}
+                <strong>{eventos.join(", ")}</strong>.
+              </Typography>
+              <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
+                Cadastrado pelo RH como período crítico. Não impede aprovar — é
+                contexto para a decisão.
+              </Typography>
             </Alert>
           )}
 

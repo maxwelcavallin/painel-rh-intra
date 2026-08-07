@@ -16,9 +16,10 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
-import { ChevronDown, ChevronUp, Send, Users } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronUp, Send, Users } from "lucide-react";
 
 import { COMPANY_NOTICE_DAYS, MAX_ABONO_DAYS, MAX_DAYS_PER_PERIOD } from "@/lib/clt";
+import type { InstitutionalEvent } from "@/db/schema";
 
 import { submitVacationRequestAction, type RequestState } from "../actions";
 
@@ -39,7 +40,13 @@ export type TeamVacation = {
   status: string;
 };
 
-export function RequestForm({ team }: { team: TeamVacation[] }) {
+export function RequestForm({
+  team,
+  eventos,
+}: {
+  team: TeamVacation[];
+  eventos: InstitutionalEvent[];
+}) {
   const [state, action, pending] = useActionState<RequestState, FormData>(
     submitVacationRequestAction,
     {},
@@ -63,6 +70,13 @@ export function RequestForm({ team }: { team: TeamVacation[] }) {
   const conflitos =
     start && end
       ? team.filter((t) => overlaps(toISO(start), toISO(end), t.startDate, t.endDate))
+      : [];
+
+  // Períodos que a empresa marcou como críticos. Mesma lógica de sobreposição
+  // da equipe, e mesmo efeito: informa, não trava o envio.
+  const eventosNoPeriodo =
+    start && end
+      ? eventos.filter((e) => overlaps(toISO(start), toISO(end), e.startDate, e.endDate))
       : [];
 
   const total = (days ?? 0) + (abono ? abonoDays : 0);
@@ -144,6 +158,30 @@ export function RequestForm({ team }: { team: TeamVacation[] }) {
               </>
             )}
           </Typography>
+        )}
+
+        {eventosNoPeriodo.length > 0 && (
+          <Alert severity="warning" icon={<CalendarClock size={18} />}>
+            <AlertTitle>
+              {eventosNoPeriodo.length === 1
+                ? "Esse período tem um evento da empresa"
+                : "Esse período tem eventos da empresa"}
+            </AlertTitle>
+            <Stack spacing={0.5}>
+              {eventosNoPeriodo.map((e) => (
+                <Typography key={e.id} variant="body2">
+                  {e.title} — {e.startDate.split("-").reverse().join("/")} a{" "}
+                  {e.endDate.split("-").reverse().join("/")}
+                  {e.sector && ` (${e.sector})`}
+                </Typography>
+              ))}
+            </Stack>
+            <Typography variant="caption" sx={{ display: "block", mt: 1 }}>
+              Não impede o pedido — mas é um período em que a empresa costuma
+              precisar de todo mundo, então a aprovação pode demorar mais ou vir
+              com contraproposta de data.
+            </Typography>
+          </Alert>
         )}
 
         {conflitos.length > 0 && (

@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  CalendarClock,
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
@@ -107,6 +108,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/avisos",
     label: "Avisos",
     icon: Megaphone,
+    roles: RH_ONLY,
+    section: "Administração",
+  },
+  {
+    href: "/eventos",
+    label: "Eventos institucionais",
+    icon: CalendarClock,
     roles: RH_ONLY,
     section: "Administração",
   },

@@ -21,6 +21,7 @@ import {
   broadcasts,
   formResponses,
   forms,
+  institutionalEvents,
   notificationSettings,
   notifications,
   passwordResetCodes,
@@ -83,6 +84,7 @@ async function main() {
   await db.delete(forms);
   await db.delete(broadcastDeliveries);
   await db.delete(broadcasts);
+  await db.delete(institutionalEvents);
   await db.delete(notificationSettings);
   await db.delete(notifications);
   await db.delete(passwordResetCodes);

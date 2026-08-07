@@ -15,7 +15,7 @@ export default async function CalendarioPage() {
   await requireSession();
 
   const year = new Date().getFullYear();
-  const { vacations, holidays, birthdays } = await getCalendarData(year);
+  const { vacations, holidays, birthdays, events } = await getCalendarData(year);
 
   return (
     // Mais largo que as outras telas: as faixas de férias precisam de coluna
@@ -26,7 +26,8 @@ export default async function CalendarioPage() {
           Calendário
         </Typography>
         <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          Férias aprovadas, feriados nacionais/PR/Curitiba e aniversários.
+          Férias aprovadas, feriados nacionais/PR/Curitiba, aniversários e
+          eventos institucionais.
         </Typography>
       </Stack>
 
@@ -42,6 +43,7 @@ export default async function CalendarioPage() {
         vacations={vacations}
         holidays={holidays}
         birthdays={birthdays}
+        events={events}
       />
     </Stack>
   );

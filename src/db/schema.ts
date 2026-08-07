@@ -433,6 +433,43 @@ export const formResponses = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
+/* institutionalEvents (períodos críticos da empresa)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Datas em que a empresa preferia não ter gente de férias — inventário,
+ * fechamento, auditoria, evento de cliente.
+ *
+ * Cadastrado só pelo RH, e o efeito é AVISAR, nunca bloquear: quem pede férias
+ * vê o conflito antes de enviar, e gestor e RH veem na hora de aprovar. A regra
+ * de negócio real continua sendo a CLT (art. 136: a época é escolha do
+ * empregador) — este cadastro é o que torna essa escolha transparente, em vez
+ * de virar uma recusa sem explicação depois do pedido feito.
+ *
+ * `sector` NULL significa empresa inteira. Guardar o nome do setor (e não um id)
+ * acompanha `users.sector`, que também é texto livre preenchido pelo RH.
+ */
+export const institutionalEvents = pgTable(
+  "institutional_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    startDate: date("start_date", { mode: "string" }).notNull(),
+    endDate: date("end_date", { mode: "string" }).notNull(),
+    /** NULL = vale para a empresa inteira. */
+    sector: text("sector"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("institutional_events_periodo_idx").on(t.startDate, t.endDate)],
+);
+
+/* ------------------------------------------------------------------ */
 /* Tipos inferidos                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -448,3 +485,4 @@ export type Role = (typeof roleEnum.enumValues)[number];
 export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 export type Channel = (typeof channelEnum.enumValues)[number];
 export type NotificationSetting = typeof notificationSettings.$inferSelect;
+export type InstitutionalEvent = typeof institutionalEvents.$inferSelect;
